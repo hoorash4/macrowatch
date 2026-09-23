@@ -209,7 +209,7 @@ test('the auxiliary pivot reason section is removed without deleting saved reaso
   assert.match(controller,/pivotReasonFor\(item,result\)/);
 });
 
-test('only explicit case deletion may physically delete manual rows',()=>{
+test('manual rows remain protected outside explicit administrator deletion',()=>{
   const sql=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260923070100_historical_manual_pivots.sql'),'utf8');
   assert.match(sql,/before delete on public\.historical_indicator_manual_pivots/);
   assert.match(sql,/before truncate on public\.historical_indicator_manual_pivots/);
@@ -222,6 +222,18 @@ test('only explicit case deletion may physically delete manual rows',()=>{
   assert.match(sql,/delete from public\.historical_indicator_pivots/);
   assert.match(sql,/if p_delete_manual_pivots then/);
   assert.doesNotMatch(sql,/case_code text not null references public\.historical_cases/);
+});
+
+test('deleting a pivot removes its manual row and automatic row without leaving a deletion marker',()=>{
+  const sql=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260923224100_remove_deleted_manual_pivot_markers.sql'),'utf8');
+  const deletion=sql.slice(sql.indexOf('  if p_is_deleted then'),sql.indexOf('  if p_pivot_date is null'));
+  assert.match(deletion,/perform set_config\('macrowatch\.explicit_manual_pivot_delete','true',true\)/);
+  assert.match(deletion,/delete from public\.historical_indicator_manual_pivots m[\s\S]*m\.source_date=p_source_date/);
+  assert.match(deletion,/delete from public\.historical_indicator_pivots a/);
+  assert.doesNotMatch(deletion,/insert into public\.historical_indicator_manual_pivots/);
+  assert.match(sql,/delete from public\.historical_indicator_manual_pivots where is_deleted=true/);
+  assert.match(sql,/if auth\.role\(\) is distinct from 'service_role'/);
+  assert.match(sql,/if not exists \(select 1 from public\.user_accounts where user_id=p_user_id and is_admin=true\)/);
 });
 
 test('one case-indicator pivot set is shared while key designations stay index-specific',()=>{
