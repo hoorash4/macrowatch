@@ -33,11 +33,10 @@ DATABASE_SERIES = {
     "em_capital_capacity_daily": ("em_capital_capacity_daily", "observation_date", 14),
     "equity_bond_attractiveness_weekly": ("equity_bond_attractiveness_weekly", "observation_date", 21),
     "liquidity_indices": ("liquidity_indices", "observation_date", 21),
-    # The table primary key is (week_start, etf_id), so open -> intraday ->
-    # close intentionally replace the same weekly rows. Only the final close
-    # stage is durable evidence for freshness; scheduler phase coverage is
-    # checked separately from the pg_cron registry RPC.
-    "sector_flow_rankings": ("market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.close"}),
+    # Weekly rankings replace this week's rows at each stage. ETF prices keep
+    # each market_date, so the latest close there survives the next day's open.
+    # Scheduler phase coverage is checked separately from the pg_cron registry RPC.
+    "sector_flow_rankings": ("market_sector_etf_prices", "market_date", 4, {"price_stage": "eq.close"}),
 }
 
 SECTOR_FLOW_JOBS = {
@@ -341,3 +340,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
