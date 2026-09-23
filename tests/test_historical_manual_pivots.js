@@ -84,11 +84,13 @@ test('the modal checks an automatically magenta pivot and unchecks an administra
   open({code:'TEST',date:'2022-01-05'});
   assert.equal(fields['historical-manual-pivot-is-key'].checked,true);
   assert.equal(fields['historical-manual-pivot-reference'].value,'START');
+  assert.equal(scope.manualPivotContext.keyDecision,'auto');
   scope.effectivePivots=()=>[{pivotDate:'2022-01-05',markerStatus:'manual_standard',selectedReferences:[]}];
   item.manualPivots=[{sourceDate:'2022-01-05',pivotDate:'2022-01-05',keyReference:null,keySuppressed:true,isDeleted:false}];
   open({code:'TEST',date:'2022-01-05'});
   assert.equal(fields['historical-manual-pivot-is-key'].checked,false);
   assert.equal(fields['historical-manual-pivot-reference'].value,'');
+  assert.equal(scope.manualPivotContext.keyDecision,'manual_off');
 });
 
 test('a date-only manual pivot sends optional metadata as null while keeping the measured value',async()=>{
@@ -123,7 +125,46 @@ test('a date-only manual pivot sends optional metadata as null while keeping the
   assert.equal(saved.relationship,null);
   assert.equal(saved.reason,null);
   assert.equal(saved.comment,null);
-  assert.equal(saved.key_reference,null);
+  assert.equal(saved.key_reference,'AUTO');
+});
+
+test('new automatic decisions and existing administrator key-off remain distinct on save',async()=>{
+  const from=controller.indexOf('  async function persistManualPivot('),to=controller.indexOf('  const referenceOrder=',from);
+  const fields=Object.fromEntries(['historical-manual-pivot-date','historical-manual-pivot-is-key',
+    'historical-manual-pivot-reference','historical-manual-pivot-relationship','historical-manual-pivot-reason',
+    'historical-manual-pivot-comment','historical-manual-pivot-status','historical-manual-pivot-save',
+    'historical-manual-pivot-delete'].map(id=>[id,{value:'',checked:false,disabled:false,textContent:''}]));
+  fields['historical-manual-pivot-date'].value='2022-01-05';
+  const sent=[];
+  const scope={isAdmin:true,manualPivotContext:{caseCode:'case',indexCode:'SP500',seriesCode:'TEST',
+    sourceDate:'2022-01-05',keyTouched:false,keyDecision:'auto',item:{rows:[],manualPivots:[]}},
+    functionClient:{invoke:async(_name,payload)=>{sent.push(payload);}},$:id=>fields[id],rawValueAtDate:()=>42,
+    indicatorRepository:{clearManualPivots(){},clearScoreRows(){}},indexData:{indices:{SP500:'S&P 500'}},
+    analysisCache:new Map(),rebuildHistoricalScores:async()=>{},closeManualPivotModal(){},activeCase:null,activeMode:'history'};
+  const persist=vm.runInNewContext(`${controller.slice(from,to)}\npersistManualPivot`,scope);
+  fields['historical-manual-pivot-is-key'].checked=true;
+  fields['historical-manual-pivot-reference'].value='START';
+  await persist(false);
+  assert.equal(sent.at(-1).key_reference,'AUTO');
+  scope.manualPivotContext.keyTouched=true;
+  await persist(false);
+  assert.equal(sent.at(-1).key_reference,'START');
+  fields['historical-manual-pivot-is-key'].checked=false;
+  await persist(false);
+  assert.equal(sent.at(-1).key_reference,null);
+  scope.manualPivotContext.keyTouched=false;
+  scope.manualPivotContext.keyDecision='manual_off';
+  await persist(false);
+  assert.equal(sent.at(-1).key_reference,null);
+});
+
+test('new database save leaves AUTO undecided while preserving explicit off and other indices',()=>{
+  const sql=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260924060500_manual_pivot_auto_key_decision.sql'),'utf8');
+  assert.match(sql,/p_key_reference not in \('START','PEAK','TROUGH','AUTO'\)/);
+  assert.match(sql,/next_keys=coalesce\(prior\.key_references,'\{\}'::jsonb\)-p_index_code/);
+  assert.match(sql,/if p_key_reference in \('START','PEAK','TROUGH'\) then/);
+  assert.match(sql,/elsif p_key_reference is null then\s+next_keys=next_keys\|\|jsonb_build_object\(p_index_code,false\)/);
+  assert.match(sql,/where a\.case_code=p_case_code and a\.series_code=p_series_code/);
 });
 
 test('a non-key manual pivot uses the existing date windows for magenta, dark, or light gray',()=>{
