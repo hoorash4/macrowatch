@@ -380,10 +380,11 @@
     const root=$('historical-indicator-detail');
     if(!item){root.hidden=true;root.replaceChildren();return;}
     root.hidden=false;root.replaceChildren();
-    const heading=document.createElement('div'),title=document.createElement('strong'),metaLine=document.createElement('span'),grid=document.createElement('div');
+    const primary=document.createElement('div'),heading=document.createElement('div'),title=document.createElement('strong'),metaLine=document.createElement('span'),grid=document.createElement('div');
+    primary.className='historical-indicator-primary';
     heading.className='historical-indicator-detail-heading';title.textContent=item.meta.title;
     metaLine.textContent=`${item.meta.category} · ${item.meta.frequencyLabel} · ${item.meta.unit} · 관측일 원자료 기준`;
-    heading.append(title,metaLine);root.append(heading);
+    heading.append(title,metaLine);primary.append(heading);
     grid.className='historical-indicator-result-grid historical-pivot-detail-grid';
     const dates={START:context.cycle.startDate,PEAK:context.cycle.peakDate,TROUGH:context.cycle.troughDate};
     function appendCard(target,type,score,isDark){
@@ -399,7 +400,7 @@
       target.append(card);
     }
     referenceOrder.forEach(type=>appendCard(grid,type,item.byReference?.[type]?.markerStatus==='confirmed'?item.byReference[type]:null,false));
-    root.append(grid);
+    primary.append(grid);root.append(primary);
     const darkPivots=item.byReference?.LIST?.darkPivots||[];
     if(darkPivots.length){
       const darkHeading=document.createElement('strong'),darkGrid=document.createElement('div');
