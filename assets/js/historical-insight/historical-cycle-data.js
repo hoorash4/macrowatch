@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const caseFields = 'case_code,display_order,case_name,primary_index_code,comparison_index_codes,search_start,search_end,cycle_summary';
+  const caseFields = 'case_code,display_order,case_name,primary_index_code,pivot_source_index_code,comparison_index_codes,search_start,search_end,cycle_summary';
   const marketFields = 'case_code,index_code,start_date,peak_date,trough_date,cycle_status';
   const currentSettingsFields = 'setting_key,current_name';
   const iso = /^\d{4}-\d{2}-\d{2}$/;
@@ -33,11 +33,11 @@
   function normalizeCase(row, marketRows) {
     const item = {
       code: String(row?.case_code || ''), order: Number(row?.display_order), name: String(row?.case_name || ''),
-      primaryIndex: String(row?.primary_index_code || ''), comparisons: Array.isArray(row?.comparison_index_codes) ? [...row.comparison_index_codes] : [],
+      primaryIndex: String(row?.primary_index_code || ''), pivotSourceIndex: String(row?.pivot_source_index_code || row?.primary_index_code || ''), comparisons: Array.isArray(row?.comparison_index_codes) ? [...row.comparison_index_codes] : [],
       searchStart: dateValue(row?.search_start), searchEnd: dateValue(row?.search_end), summary: String(row?.cycle_summary || ''),
     };
     const indices = window.MacroWatchHistoricalData?.indices || {};
-    if (!item.code || !item.name || !Number.isInteger(item.order) || item.order < 1 || !Object.hasOwn(indices, item.primaryIndex)
+    if (!item.code || !item.name || !Number.isInteger(item.order) || item.order < 1 || !Object.hasOwn(indices, item.primaryIndex) || !Object.hasOwn(indices, item.pivotSourceIndex)
         || !validDate(item.searchStart) || (item.searchEnd && !validDate(item.searchEnd))
         || (item.searchEnd && item.searchStart > item.searchEnd)) {
       throw new Error('Historical Case 정의를 확인해 주세요.');
@@ -139,3 +139,4 @@
 
   window.MacroWatchHistoricalCycles = Object.freeze({ caseFields, marketFields, currentSettingsFields, normalizeCase, normalizeMarket, createRepository, marketCycle, calculate, chartPoints });
 })();
+
