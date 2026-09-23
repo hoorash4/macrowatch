@@ -200,13 +200,15 @@ test('one case-indicator pivot set is shared while key designations stay index-s
   assert.doesNotMatch(migration,/delete from public\.historical_indicator_manual_pivots/);
 });
 
-test('reason presets contain matching rise and fall language without the redundant old choice',()=>{
-  assert.match(controller,/오랫동안 이어진 상승이 멈추고 고점권 횡보로 국면이 바뀌었습니다/);
-  assert.match(controller,/오랫동안 이어진 하락이 멈추고 저점권 횡보로 국면이 바뀌었습니다/);
-  assert.match(controller,/상승 막바지에 급등한 뒤 방향을 되돌렸고, 이후 하락 흐름이 이어졌습니다/);
-  assert.match(controller,/하락 막바지에 급락한 뒤 방향을 되돌렸고, 이후 상승 흐름이 이어졌습니다/);
+test('reason presets keep symmetric directions without duration labels',()=>{
+  const presets=controller.match(/const MANUAL_PIVOT_REASONS=Object\.freeze\(\[([\s\S]*?)\]\);/)?.[1];
+  assert.ok(presets);
+  assert.match(presets,/상승이 멈추고 고점권 횡보로 국면이 바뀌었습니다/);
+  assert.match(presets,/하락이 멈추고 저점권 횡보로 국면이 바뀌었습니다/);
+  assert.match(presets,/상승 흐름에서 급등한 뒤 방향을 되돌렸고, 이후 하락 흐름이 이어졌습니다/);
+  assert.match(presets,/하락 흐름에서 급락한 뒤 방향을 되돌렸고, 이후 상승 흐름이 이어졌습니다/);
   assert.match(controller,/이전\/이후 추세가 불명확 합니다\./);
-  assert.doesNotMatch(controller,/장기 하락을 마친 뒤 상승 흐름이 이어지기 시작했습니다/);
+  assert.doesNotMatch(presets,/장기|오랫동안|장기간|중장기|막바지/);
 });
 
 test('administrator relationship supports unclear from form through API and database',()=>{
