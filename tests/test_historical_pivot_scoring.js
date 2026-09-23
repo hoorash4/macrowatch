@@ -182,7 +182,9 @@ test('stored policy-rate PEAK excludes the 24 days before its pivot',async()=>{
     relationship:'inverse',key_references:{SP500:'PEAK'},is_deleted:false}];
   const scoreAt=date=>scoreReferences({pivots:mergedPivots({manual:manualAt(date),cycle,indexCode:'SP500'}),rows,cycle}).PEAK;
   assert.equal(scoreAt('2022-01-27').relationshipSuitabilityScore,91);
+  assert.equal(scoreAt('2022-01-27').continuityScore,100);
   assert.equal(scoreAt('2022-01-03').relationshipSuitabilityScore,100);
+  assert.equal(scoreAt('2022-01-03').continuityScore,100);
 });
 
 test('stored score input keeps manual deletion and the surviving manual pivot separate',async()=>{
