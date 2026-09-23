@@ -186,7 +186,8 @@ test('analysis tabs separate current regime from the historical case list and en
   assert.match(html,/id="historical-current-case-name"/);
   assert.match(html,/id="historical-indicator-section"[\s\S]*id="historical-indicator-clear"[\s\S]*aria-label="비교 지표 선택"/);
   assert.doesNotMatch(html,/차트 추가 지표 샘플|샘플<\/small>/);
-  assert.doesNotMatch(css,/\.historical-stage\.is-current-mode \.historical-summary \{ display: none/);
+  assert.doesNotMatch(html,/class="historical-summary"|CYCLE STANDARD|HISTORICAL FACTS|CURRENT COMPARISON/);
+  assert.doesNotMatch(css,/\.historical-summary/);
   assert.match(controller,/cases\.filter\(isHistoricalCase\)/);
   assert.match(controller,/Object\.values\(item\.markets\)\.some\(cycle\s*=>\s*cycle\.status\s*!==\s*'confirmed'\)/);
   assert.match(html,/id="historical-current-name-edit"[^>]*hidden/);
