@@ -45,6 +45,18 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 .historical-cycle-points article[data-cycle-point="trough"] small { color: #2563eb; }
 .historical-cycle-points strong { display: block; font-size: 17px; line-height: 1.15; letter-spacing: -.015em; }
 .historical-cycle-points span { display: block; color: var(--theme-text-secondary); font-size: 15px; font-weight: 750; }
+.historical-cycle-top-indicators { margin-top: 18px; padding: 13px 16px 15px; border: 1px solid #334155; border-radius: 10px; background: #111827; color: #f8fafc; }
+.historical-cycle-top-indicators[hidden] { display: none; }
+.historical-cycle-top-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 11px; }
+.historical-cycle-top-heading strong { font-size: 12px; font-weight: 800; }
+.historical-cycle-top-heading span { color: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.historical-cycle-top-indicators ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 0; padding: 0; list-style: none; }
+.historical-cycle-top-indicators li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-width: 0; padding: 5px 14px; border-left: 1px solid #334155; }
+.historical-cycle-top-indicators li:first-child { padding-left: 0; border-left: 0; }
+.historical-cycle-top-indicators li b { color: #94a3b8; font-size: 13px; font-variant-numeric: tabular-nums; }
+.historical-cycle-top-indicators li:first-child b { color: #fbbf24; }
+.historical-cycle-top-indicators li span { overflow: hidden; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.historical-cycle-top-indicators li strong { color: #e2e8f0; font-size: 13px; font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .historical-cycle-performance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
 .historical-cycle-performance article { position: relative; display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 16px; row-gap: 7px; min-height: 72px; padding: 11px 18px; overflow: hidden; border: 1px solid var(--theme-border); border-radius: 10px; }
 .historical-cycle-performance article::after { position: absolute; right: -17px; bottom: -28px; width: 80px; height: 80px; border-radius: 50%; content: ''; opacity: .14; }
@@ -73,7 +85,7 @@ html[data-theme="dark"] .historical-cycle-market { border-color: #475569; color:
 html[data-theme="dark"] .historical-cycle-performance .is-rise strong { color: #f87171; }
 html[data-theme="dark"] .historical-cycle-performance .is-fall strong { color: #60a5fa; }
 html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; color: #071b42; }
-@media(max-width:850px){.historical-case-list{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-cycle-panel{padding:19px 16px 20px}.historical-cycle-heading{align-items:flex-start;flex-direction:column}.historical-cycle-description{font-size:13px}.historical-cycle-points{grid-template-columns:1fr}.historical-cycle-performance{grid-template-columns:1fr}.historical-cycle-performance article{min-height:72px}}
+@media(max-width:850px){.historical-case-list{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-cycle-panel{padding:19px 16px 20px}.historical-cycle-heading{align-items:flex-start;flex-direction:column}.historical-cycle-description{font-size:13px}.historical-cycle-points{grid-template-columns:1fr}.historical-cycle-top-indicators ol{grid-template-columns:1fr}.historical-cycle-top-indicators li{padding:9px 0;border-left:0;border-top:1px solid #334155}.historical-cycle-top-indicators li:first-child{padding-top:0;border-top:0}.historical-cycle-performance{grid-template-columns:1fr}.historical-cycle-performance article{min-height:72px}}
 
 /* 과거 사례와 현재 국면은 서로 다른 분석 화면으로 운용한다. */
 .historical-analysis-tabs { display: inline-flex; gap: 6px; margin-top: 14px; padding: 4px; border: 1px solid var(--theme-border); border-radius: 10px; background: var(--theme-surface-elevated); }
