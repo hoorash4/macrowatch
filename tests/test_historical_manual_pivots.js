@@ -78,6 +78,7 @@ test('the modal checks an automatically magenta pivot and unchecks an administra
   const item={meta:{code:'TEST',title:'테스트 지표'},storedPivots:[auto('2022-01-05',0)],manualPivots:[]};
   const scope={isAdmin:true,activeMode:'history',functionClient:{},activeIndicatorContext:{analyses:[item]},
     activeCase:{code:'case'},activeCode:'SP500',$:id=>fields[id],manualPivotContext:null,
+    manualReasonLoadError:'',
     effectivePivots:()=>[{pivotDate:'2022-01-05',markerStatus:'confirmed',selectedReferences:[{type:'START'}]}]};
   const open=vm.runInNewContext(`${controller.slice(from,to)}\nopenManualPivotModal`,scope);
   open({code:'TEST',date:'2022-01-05'});
@@ -200,8 +201,9 @@ test('one case-indicator pivot set is shared while key designations stay index-s
   assert.doesNotMatch(migration,/delete from public\.historical_indicator_manual_pivots/);
 });
 
-test('reason presets keep symmetric directions without duration labels',()=>{
-  const presets=controller.match(/const MANUAL_PIVOT_REASONS=Object\.freeze\(\[([\s\S]*?)\]\);/)?.[1];
+test('reason presets are seeded in the database and loaded into the modal',()=>{
+  const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260924053900_historical_pivot_reason_presets.sql'),'utf8');
+  const presets=migration.split('insert into public.historical_pivot_reason_presets')[1];
   assert.ok(presets);
   assert.match(presets,/상승이 멈추고 고점권 횡보로 국면이 바뀌었습니다/);
   assert.match(presets,/하락이 멈추고 저점권 횡보로 국면이 바뀌었습니다/);
@@ -209,8 +211,42 @@ test('reason presets keep symmetric directions without duration labels',()=>{
   assert.match(presets,/하락 흐름에서 급락한 뒤 방향을 되돌렸고, 이후 상승 흐름이 이어졌습니다/);
   assert.match(presets,/급등 후 추세적인 하락세로 전환됐습니다/);
   assert.match(presets,/급락 후 추세적인 상승세로 전환됐습니다/);
-  assert.match(controller,/이전\/이후 추세가 불명확 합니다\./);
+  assert.match(presets,/이전\/이후 추세가 불명확 합니다\./);
   assert.doesNotMatch(presets,/장기|오랫동안|장기간|중장기|막바지/);
+  assert.doesNotMatch(controller,/MANUAL_PIVOT_REASONS/);
+  assert.match(controller,/action:'list_historical_pivot_reason_presets'/);
+  assert.match(migration,/alter table public\.historical_pivot_reason_presets enable row level security/);
+  assert.equal((presets.match(/\(\d+, '/g)||[]).length,19);
+});
+
+test('the pivot reason choices come from the administrator API',async()=>{
+  const from=controller.indexOf('  async function loadManualReasonPresets(');
+  const to=controller.indexOf('  function state(',from);
+  assert.ok(from>=0&&to>from);
+  const select={options:[],replaceChildren(...items){this.options=items;},add(item){this.options.push(item);}};
+  const scope={$:()=>select,Option:function(label,value){this.label=label;this.value=value;},
+    functionClient:{invoke:async(name,payload)=>{
+      assert.equal(name,'admin-control');
+      assert.equal(payload.action,'list_historical_pivot_reason_presets');
+      return{items:[{phrase:'새 관리자 문구'}]};
+    }},manualReasonLoadError:''};
+  const load=vm.runInNewContext(`${controller.slice(from,to)}\nloadManualReasonPresets`,scope);
+  await load();
+  assert.deepEqual(Array.from(select.options,item=>item.value),['','새 관리자 문구']);
+  assert.equal(scope.manualReasonLoadError,'');
+});
+
+test('the administrator manages reason presets in a closed accordion without changing saved pivots',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../admin.html'),'utf8');
+  const admin=fs.readFileSync(path.join(__dirname,'../assets/js/admin/admin.js'),'utf8');
+  const edge=fs.readFileSync(path.join(__dirname,'../supabase/functions/admin-control/index.ts'),'utf8');
+  assert.match(html,/<section data-admin-card-id="historical-pivot-reasons"[\s\S]*?<details class="group">/);
+  assert.match(admin,/save_historical_pivot_reason_preset/);
+  assert.match(admin,/delete_historical_pivot_reason_preset/);
+  assert.match(edge,/action === "list_historical_pivot_reason_presets"/);
+  assert.match(edge,/action === "save_historical_pivot_reason_preset"/);
+  assert.match(edge,/action === "delete_historical_pivot_reason_preset"/);
+  assert.doesNotMatch(edge,/delete\(\)\.eq\("reason"/);
 });
 
 test('administrator relationship supports unclear from form through API and database',()=>{
