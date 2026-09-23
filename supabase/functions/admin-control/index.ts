@@ -759,6 +759,55 @@ export default {
         return json({ items: data || [] }, 200, origin);
       }
 
+      if (action === "list_historical_pivot_reason_presets") {
+        const { data, error } = await admin.from("historical_pivot_reason_presets")
+          .select("id,phrase,sort_order")
+          .order("sort_order", { ascending: true });
+        if (error) throw error;
+        return json({ items: data || [] }, 200, origin);
+      }
+
+      if (action === "save_historical_pivot_reason_preset") {
+        const phrase = String(body?.phrase || "").trim();
+        if (!phrase || phrase.length > 250) {
+          return json({ error: "피봇 근거 문구를 250자 이내로 입력해 주세요." }, 400, origin);
+        }
+        const id = body?.id == null ? null : Number(body.id);
+        if (id !== null && (!Number.isSafeInteger(id) || id < 1)) {
+          return json({ error: "피봇 근거 문구 식별자를 확인해 주세요." }, 400, origin);
+        }
+        if (id !== null) {
+          const { data, error } = await admin.from("historical_pivot_reason_presets")
+            .update({ phrase, updated_at: new Date().toISOString() })
+            .eq("id", id).select("id,phrase,sort_order").maybeSingle();
+          if (error?.code === "23505") return json({ error: "이미 등록된 피봇 근거 문구입니다." }, 409, origin);
+          if (error) throw error;
+          if (!data) return json({ error: "피봇 근거 문구를 찾을 수 없습니다." }, 404, origin);
+          return json({ item: data }, 200, origin);
+        }
+        const { data: last, error: orderError } = await admin.from("historical_pivot_reason_presets")
+          .select("sort_order").order("sort_order", { ascending: false }).limit(1).maybeSingle();
+        if (orderError) throw orderError;
+        const { data, error } = await admin.from("historical_pivot_reason_presets")
+          .insert({ phrase, sort_order: (last?.sort_order || 0) + 1 })
+          .select("id,phrase,sort_order").single();
+        if (error?.code === "23505") return json({ error: "이미 등록된 문구이거나 목록이 변경됐습니다. 새로고침 후 다시 시도해 주세요." }, 409, origin);
+        if (error) throw error;
+        return json({ item: data }, 201, origin);
+      }
+
+      if (action === "delete_historical_pivot_reason_preset") {
+        const id = Number(body?.id);
+        if (!Number.isSafeInteger(id) || id < 1) {
+          return json({ error: "피봇 근거 문구 식별자를 확인해 주세요." }, 400, origin);
+        }
+        const { data, error } = await admin.from("historical_pivot_reason_presets")
+          .delete().eq("id", id).select("id").maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: "피봇 근거 문구를 찾을 수 없습니다." }, 404, origin);
+        return json({ deleted: true }, 200, origin);
+      }
+
       if (action === "list_extreme_news_rules") {
         const { data, error } = await admin.from("news_extreme_rules")
           .select("id,signal,phrase,created_at,updated_at")
