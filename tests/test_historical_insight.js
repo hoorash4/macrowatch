@@ -165,6 +165,9 @@ test('cycle accent continues to the primary pivot cards in red green blue order'
   assert.match(css,/\.historical-indicator-primary::before[^\n]*#16a34a 0 42%, #2563eb 42%/);
   assert.match(controller,/primary\.append\(grid\);root\.append\(primary\)/);
   assert.match(controller,/root\.append\(darkHeading,darkGrid\)/);
+  assert.match(css,/\.historical-indicator-detail:has\(\.historical-indicator-primary\) \{ border-top: 0; \}/);
+  assert.match(css,/\.historical-indicator-primary:has\(\+ \.historical-pivot-dark-heading\)::before \{ bottom: -14px; \}/);
+  assert.match(css,/\.historical-pivot-dark-heading \{[^}]*margin-top:14px; padding-top:22px; border-top:1px solid var\(--theme-border\)/);
 });
 test('historical pivot cards place their status stripe on the top edge only', () => {
   const css=read('assets/css/historical-insight.css');
