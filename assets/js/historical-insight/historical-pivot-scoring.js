@@ -81,5 +81,7 @@
     const colorFactor=pivot.markerStatus==='confirmed'?1:.5;
     return Math.floor(100*Math.min(1,activeDays/benchmarkDays)*colorFactor);
   }
-  window.MacroWatchHistoricalPivotScoring=Object.freeze({days,shiftMonths,timelinessScore,referencePivot,firstIntermediate,intermediatePivots,endpointFactor,relationshipScore,continuityScore});
+  const compositeScore=(timeliness,relationship,continuity)=>Math.floor(timeliness*.4+relationship*.3+continuity*.3);
+  window.MacroWatchHistoricalPivotScoring=Object.freeze({days,shiftMonths,timelinessScore,referencePivot,firstIntermediate,intermediatePivots,endpointFactor,relationshipScore,continuityScore,compositeScore});
 })();
+
