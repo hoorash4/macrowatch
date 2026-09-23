@@ -22,9 +22,9 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 .historical-case small { color: #9ca3af; font-size: 8px; font-weight: 750; white-space: nowrap; }
 .historical-case.is-active small { color: #d1d5db; }
 .historical-cycle-panel { position: relative; padding: 22px 24px 24px; border-top: 1px solid var(--theme-border); background: linear-gradient(135deg, rgba(37,99,235,.045), transparent 42%), var(--theme-surface-elevated); }
-.historical-cycle-panel:has(~ .historical-indicator-detail:not([hidden])) { background: linear-gradient(180deg, rgba(37,99,235,.045), rgba(37,99,235,.025)), var(--theme-surface-elevated); }
+.historical-cycle-panel:has(+ .historical-indicator-detail:not([hidden])) { background: linear-gradient(180deg, rgba(37,99,235,.045), rgba(37,99,235,.025)), var(--theme-surface-elevated); }
 .historical-cycle-panel::before { position: absolute; inset: 0 auto 0 0; width: 4px; background: linear-gradient(180deg, #dc2626 0 34%, #16a34a 34% 67%, #2563eb 67%); content: ''; }
-.historical-cycle-panel:has(~ .historical-indicator-detail:not([hidden]))::before { background: linear-gradient(180deg, #dc2626 0 75%, #16a34a 75%); }
+.historical-cycle-panel:has(+ .historical-indicator-detail:not([hidden]))::before { background: linear-gradient(180deg, #dc2626 0 75%, #16a34a 75%); }
 .historical-cycle-panel[hidden] { display: none; }
 .historical-cycle-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
 .historical-cycle-heading > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
@@ -76,7 +76,7 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 .historical-cycle-editor button { padding: 7px 10px; border: 0; border-radius: 6px; background: #111827; color: #fff; font-size: 9px; font-weight: 750; cursor: pointer; }
 #historical-cycle-save-status { color: var(--theme-text-secondary); font-size: 9px; }
 html[data-theme="dark"] .historical-cycle-panel { background: #111c2f; border-color: #334155; }
-html[data-theme="dark"] .historical-cycle-panel:has(~ .historical-indicator-detail:not([hidden])) { background: linear-gradient(180deg, rgba(37,99,235,.045), rgba(37,99,235,.025)), #111c2f; }
+html[data-theme="dark"] .historical-cycle-panel:has(+ .historical-indicator-detail:not([hidden])) { background: linear-gradient(180deg, rgba(37,99,235,.045), rgba(37,99,235,.025)), #111c2f; }
 html[data-theme="dark"] .historical-cycle-points article { background: #0f172a; border-color: #334155; }
 html[data-theme="dark"] .historical-cycle-heading small { background: #173363; color: #93c5fd; }
 html[data-theme="dark"] .historical-cycle-market { border-color: #475569; color: #cbd5e1; }
