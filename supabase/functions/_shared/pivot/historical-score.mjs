@@ -149,7 +149,8 @@ export function scoreReferences({pivots, rows, cycle}) {
       : {relationship: 'unclear', score: 0};
     const continuityStart = type === 'TROUGH' ? from : pivot?.pivotDate;
     const next = pivot ? intermediates(pivots, continuityStart, benchmarkEnd)[0] : null;
-    const total = days(from, benchmarkEnd), active = pivot ? Math.max(0, days(continuityStart, next?.pivotDate || benchmarkEnd)) : 0;
+    const total = continuityStart ? days(continuityStart, benchmarkEnd) : 0;
+    const active = pivot ? Math.max(0, days(continuityStart, next?.pivotDate || benchmarkEnd)) : 0;
     const continuity = pivot && total > 0 ? Math.floor(100 * Math.min(1, active / total) * (pivot.markerStatus === 'confirmed' ? 1 : .5)) : 0;
     const timing = timeliness(from, pivot);
     result[type] = {referenceDate: from, pivotDate: pivot?.pivotDate || null, pivotValue: pivot?.pivotValue ?? null,
