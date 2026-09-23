@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v2';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v3';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -113,6 +113,8 @@ function relationship({pivots, rows, from, to, benchmarkEnd, expectedDirection, 
     let direction = segment.direction;
     if (!direction) direction = segments.slice(0, i).reverse().find(value => value.direction)?.direction
       || segments.slice(i + 1).find(value => value.direction)?.direction || 0;
+    if (!direction && ['positive', 'inverse'].includes(manualRelationship))
+      direction = manualRelationship === 'positive' ? expectedDirection : -expectedDirection;
     if (direction > 0) totals.up += segment.days * (segment.direction ? 1 : .5);
     if (direction < 0) totals.down += segment.days * (segment.direction ? 1 : .5);
   }
@@ -133,11 +135,7 @@ export function scoreReferences({pivots, rows, cycle}) {
     const from = dates[type], pivot = selected[type], benchmarkEnd = type === 'START' ? dates.PEAK : type === 'PEAK' ? dates.TROUGH : bufferEnd;
     const firstAfterTrough = type === 'TROUGH' ? intermediates(pivots, from, bufferEnd)[0] : null;
     const to = firstAfterTrough?.pivotDate || benchmarkEnd;
-    const endPivot = type === 'START' ? selected.PEAK : type === 'PEAK' ? selected.TROUGH : null;
-    const factor = type === 'TROUGH' ? (pivot?.markerStatus === 'confirmed' ? 1 : pivot ? .5 : 0)
-      : !pivot && !endPivot ? 0 : !pivot || !endPivot ? .25
-      : (Number(pivot.markerStatus === 'confirmed') + Number(endPivot.markerStatus === 'confirmed')) === 2 ? 1
-      : (Number(pivot.markerStatus === 'confirmed') + Number(endPivot.markerStatus === 'confirmed')) === 1 ? .75 : .5;
+    const factor = pivot?.markerStatus === 'confirmed' ? 1 : pivot ? .5 : 0;
     const relation = pivot ? relationship({pivots, rows, from, to, benchmarkEnd,
       expectedDirection: type === 'PEAK' ? -1 : 1, factor, manualRelationship: pivot.isManual ? pivot.relationship : null})
       : {relationship: 'unclear', score: 0};
