@@ -204,10 +204,11 @@ test('current market anchors use the persisted cycle path and force a complete s
   for(const id of ['historical-current-anchor-form','historical-current-start-date','historical-current-peak-date','historical-current-trough-date'])assert.match(html,new RegExp(`id="${id}"`));
   assert.match(controller,/function saveAnchors\(values,output\)/);assert.match(controller,/await caseRepository\.save\(savedCode,activeCode,values,currentUser\.id\)/);assert.match(controller,/analysisCache\.clear\(\);rebuildCurrentModel\(\)/);assert.match(controller,/historical-current-anchor-form'\)\.addEventListener\('submit'/);assert.match(controller,/showCurrentAnchors\(cycle\)/);
 });
-test('current screening bounds retrospective validation and ignores zero-score near misses',()=>{
+test('current indicator list includes every available series without historical score screening',()=>{
   const source=read('assets/js/historical-insight/historical-insight.js');
-  assert.match(source,/pastWindow=indicatorAnalysis\.displayWindow\(past,pastCycle,pastEnd\),pastRows=rows\.filter/);
-  assert.match(source,/if\(analysis\.meaningfulReferenceCount>0\)return\{item,rows,historicalScore:analysis\.overallScore,meaningful:true\}/);
+  assert.match(source,/usable=catalog\.filter\(item=>coverage\.has\(item\.code\)\)/);
+  assert.match(source,/rawAnalyses=await mapSeries\(usable/);
+  assert.doesNotMatch(source,/historicalScore|analysis\.meaningfulReferenceCount>0/);
 });
 
 
@@ -254,3 +255,4 @@ test('Historical case edit and delete controls float over the unchanged list ite
   assert.match(css,/visibility:hidden/);
   assert.match(css,/\.historical-case-row:hover \.historical-case-actions/);
 });
+
