@@ -165,6 +165,13 @@ test('cycle accent continues to the primary pivot cards in red green blue order'
   assert.match(controller,/primary\.append\(grid\);root\.append\(primary\)/);
   assert.match(controller,/root\.append\(darkHeading,darkGrid\)/);
 });
+test('historical pivot cards place their status stripe on the top edge only', () => {
+  const css=read('assets/css/historical-insight.css');
+  assert.match(css,/\.historical-pivot-detail-grid article \{[^}]*border-left:0; border-top:3px solid var\(--historical-indicator-color\)/);
+  assert.match(css,/\.historical-pivot-detail-grid article\.is-empty \{ border-top-color:var\(--theme-border\)/);
+  assert.match(css,/\.historical-pivot-detail-grid article\.is-dark \{ border-top-color:var\(--historical-near-miss-color\)/);
+  assert.match(css,/\.historical-indicator-result-grid article \{[^}]*border-left: 3px solid/);
+});
 test('analysis tabs separate current regime from the historical case list and enlarge their labels', () => {
   const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css'), controller=read('assets/js/historical-insight/historical-insight.js');
   assert.match(html,/data-historical-mode="history">과거사례 분석<\/button>/);
