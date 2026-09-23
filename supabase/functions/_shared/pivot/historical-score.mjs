@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v9';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v10';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -13,12 +13,30 @@ export function shiftMonths(value, amount) {
 const coreWindow = date => ({from: shiftMonths(date, -3), to: shiftMonths(date, 1)});
 const darkWindow = date => ({from: shiftMonths(date, -6), to: shiftMonths(date, 2)});
 
-function classifyPivots(rows, cycle, manualKeys) {
+function manualDirectionMatches(pivot, type, pivots, observations, cycle) {
+  if (!pivot.isManual || !['positive', 'inverse'].includes(pivot.relationship) || pivot.keyReference) return true;
+  if (!observations.length) return true;
+  const owner = [['START', cycle.startDate], ['PEAK', cycle.peakDate], ['TROUGH', cycle.troughDate]]
+    .filter(([, date]) => date).sort((a, b) => Math.abs(days(a[1], pivot.pivotDate)) - Math.abs(days(b[1], pivot.pivotDate)))[0]?.[0] || type;
+  const end = owner === 'START' ? cycle.peakDate : owner === 'PEAK' ? cycle.troughDate : shiftMonths(cycle.troughDate, 24);
+  const next = pivots.find(candidate => candidate.pivotDate > pivot.pivotDate);
+  const to = next?.pivotDate || end;
+  if (!to || to <= pivot.pivotDate) return false;
+  const fromValue = valueAt(observations, pivot.pivotDate), toValue = valueAt(observations, to);
+  if (!Number.isFinite(fromValue) || !Number.isFinite(toValue)) return false;
+  const direction = Math.sign(toValue - fromValue);
+  if (!direction) return true; // A flat segment follows its saved relationship at half credit in scoring.
+  const expected = owner === 'PEAK' ? -1 : 1;
+  return direction === (pivot.relationship === 'positive' ? expected : -expected);
+}
+
+function classifyPivots(rows, cycle, manualKeys, observations) {
   const refs = [['START', cycle.startDate], ['PEAK', cycle.peakDate], ['TROUGH', cycle.troughDate]].filter(([, date]) => date);
   const selected = new Map();
   for (const [type, date] of refs) {
     const window = coreWindow(date);
-    const candidates = rows.filter(pivot => pivot.pivotDate >= window.from && pivot.pivotDate <= window.to)
+    const candidates = rows.filter(pivot => pivot.pivotDate >= window.from && pivot.pivotDate <= window.to
+      && manualDirectionMatches(pivot, type, rows, observations, cycle))
       .sort((a, b) => Number(Boolean(b.isManual)) - Number(Boolean(a.isManual))
         || Math.abs(days(date, a.pivotDate)) - Math.abs(days(date, b.pivotDate))
         || a.pivotDate.localeCompare(b.pivotDate) || a.pivotOrder - b.pivotOrder);
@@ -34,7 +52,8 @@ function classifyPivots(rows, cycle, manualKeys) {
         {type: pivot.keyReference, date, offsetDays: date ? days(date, pivot.pivotDate) : null}];
     }
     const extended = refs.map(([type, date]) => ({type, date, window: darkWindow(date), offsetDays: days(date, pivot.pivotDate)}))
-      .filter(ref => pivot.pivotDate >= ref.window.from && pivot.pivotDate <= ref.window.to)
+      .filter(ref => pivot.pivotDate >= ref.window.from && pivot.pivotDate <= ref.window.to
+        && manualDirectionMatches(pivot, ref.type, rows, observations, cycle))
       .sort((a, b) => Math.abs(a.offsetDays) - Math.abs(b.offsetDays))[0];
     const wasConfirmed = refs.some(([type]) => selected.get(type) === pivot);
     const overridden = wasConfirmed && !selectedReferences.length;
@@ -45,7 +64,7 @@ function classifyPivots(rows, cycle, manualKeys) {
   });
 }
 
-export function mergedPivots({automatic = [], manual = [], aiPivots = [], cycle, indexCode}) {
+export function mergedPivots({automatic = [], manual = [], aiPivots = [], cycle, indexCode, observations = []}) {
   const blocked = new Set(manual.map(pivot => dateOnly(pivot.source_date)));
   const occupied = new Set(manual.map(pivot => dateOnly(pivot.pivot_date)).filter(Boolean));
   const source = automatic.length ? automatic.map(row => ({
@@ -66,7 +85,7 @@ export function mergedPivots({automatic = [], manual = [], aiPivots = [], cycle,
   }));
   const keys = new Map(active.filter(row => row.key_references?.[indexCode])
     .map(row => [row.key_references[indexCode], dateOnly(row.source_date)]));
-  return classifyPivots([...automaticRows, ...manualRows].sort((a, b) => a.pivotDate.localeCompare(b.pivotDate)), cycle, keys);
+  return classifyPivots([...automaticRows, ...manualRows].sort((a, b) => a.pivotDate.localeCompare(b.pivotDate)), cycle, keys, observations);
 }
 
 function timeliness(referenceDate, pivot) {
