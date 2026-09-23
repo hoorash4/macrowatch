@@ -27,6 +27,9 @@ test('the separate one-line case footer ranks the sum of three stored index scor
   assert.match(html,/class="historical-cycle-points"[\s\S]*?<\/section>\s*<section id="historical-indicator-detail"[^>]*><\/section>\s*<section id="historical-cycle-top-indicators"[\s\S]*id="historical-cycle-top-list"/);
   assert.match(css,/\.historical-cycle-top-strip \{[^}]*display: flex/);
   assert.match(css,/\.historical-cycle-top-indicators ol \{[^}]*display: flex/);
+  assert.match(css,/\.historical-cycle-top-indicators \{ padding: 22px 24px 28px; background:/);
+  assert.match(css,/\.historical-cycle-top-heading \{[^}]*border-left: 3px solid #fbbf24/);
+  assert.doesNotMatch(css.match(/\.historical-workspace:has\(> \.historical-cycle-panel:not\(\[hidden\]\)\)::after \{[^}]*\}/)?.[0]||'',/border-top/);
   const from=source.indexOf('  function candidatesFor('),to=source.indexOf('  function classifyStoredPivots(',from);
   const panel={hidden:true},list={children:[],replaceChildren(){this.children=[];},append(child){this.children.push(child);}};
   const document={createElement:tag=>({tag,textContent:'',children:[],append(...children){this.children.push(...children);}})};
@@ -213,7 +216,7 @@ test('analysis tabs separate current regime from the historical case list and en
   assert.doesNotMatch(html,/차트 추가 지표 샘플|샘플<\/small>/);
   assert.doesNotMatch(html,/class="historical-summary"|CYCLE STANDARD|HISTORICAL FACTS|CURRENT COMPARISON/);
   assert.doesNotMatch(css,/\.historical-summary/);
-  assert.match(css,/\.historical-workspace:has\(> \.historical-cycle-panel:not\(\[hidden\]\)\)::after \{[^}]*flex: 0 0 24px; border-top: 1px solid var\(--theme-border\)/);
+  assert.match(css,/\.historical-workspace:has\(> \.historical-cycle-panel:not\(\[hidden\]\)\)::after \{[^}]*flex: 0 0 24px; background: var\(--theme-surface-elevated\)/);
   assert.match(controller,/cases\.filter\(isHistoricalCase\)/);
   assert.match(controller,/Object\.values\(item\.markets\)\.some\(cycle\s*=>\s*cycle\.status\s*!==\s*'confirmed'\)/);
   assert.match(html,/id="historical-current-name-edit"[^>]*hidden/);
