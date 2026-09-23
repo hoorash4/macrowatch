@@ -8,6 +8,7 @@ const source=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insigh
 const context={window:{}};
 vm.runInNewContext(source,context);
 const scoring=context.window.MacroWatchHistoricalPivotScoring;
+const storedScoring=import('../supabase/functions/_shared/pivot/historical-score.mjs');
 const pivot=(pivotDate,markerStatus='confirmed')=>({pivotDate,markerStatus});
 
 test('timeliness awards the approved magenta and halved dark-gray boundaries',()=>{
@@ -83,39 +84,73 @@ test('a first flat segment gives half its days to the next non-flat direction',(
   assert.equal(result.score,75);
 });
 
-test('historical detail cards display three independent scores without changing pivot records',()=>{
+test('composite uses only the approved 4:3:3 weights and floors the result',()=>{
+  assert.equal(scoring.compositeScore(100,100,100),100);
+  assert.equal(scoring.compositeScore(58,17,67),48);
+  assert.equal(scoring.compositeScore(0,0,0),0);
+});
+
+test('stored scores match the existing front-end formulas for all three references',async()=>{
+  const {mergedPivots,scoreReferences,SCORE_VERSION}=await storedScoring;
+  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v2');
+  const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
+  const automatic=['2022-01-01','2022-02-01','2022-03-01'].map((date,index)=>({pivot_order:index,pivot_date:date,pivot_value:[0,10,5][index]}));
+  const pivots=mergedPivots({automatic,manual:[],cycle,indexCode:'SP500'});
+  const rows=[{observation_date:'2022-01-01',value:0},{observation_date:'2022-02-01',value:10},
+    {observation_date:'2022-03-01',value:5},{observation_date:'2024-03-01',value:15}];
+  const saved=scoreReferences({pivots,rows,cycle});
+  for(const type of ['START','PEAK','TROUGH']){
+    const referenceDate=cycle[`${type.toLowerCase()}Date`],point=pivots.find(pivot=>pivot.pivotDate===referenceDate);
+    assert.equal(saved[type].timelinessScore,scoring.timelinessScore(referenceDate,point));
+    assert.equal(saved[type].continuityScore,scoring.continuityScore(point,null,
+      type==='START'?cycle.peakDate:type==='PEAK'?cycle.troughDate:'2024-03-01',
+      scoring.days(referenceDate,type==='START'?cycle.peakDate:type==='PEAK'?cycle.troughDate:'2024-03-01'),referenceDate));
+    assert.equal(saved[type].score,scoring.compositeScore(saved[type].timelinessScore,
+      saved[type].relationshipSuitabilityScore,saved[type].continuityScore));
+  }
+  assert.deepEqual(pivots.map(point=>point.markerStatus),['confirmed','confirmed','confirmed']);
+});
+
+test('stored score input keeps manual deletion and the surviving manual pivot separate',async()=>{
+  const {mergedPivots}=await storedScoring;
+  const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
+  const automatic=[{pivot_order:0,pivot_date:'2022-01-01',pivot_value:1},
+    {pivot_order:1,pivot_date:'2022-02-01',pivot_value:2}];
+  const manual=[{source_date:'2022-01-01',is_deleted:true},
+    {source_date:'2022-02-01',pivot_date:'2022-02-03',pivot_value:3,
+      relationship:'positive',reason:'관리자 수정',key_references:{SP500:'PEAK'},is_deleted:false}];
+  const merged=mergedPivots({automatic,manual,cycle,indexCode:'SP500'});
+  assert.deepEqual(merged.map(point=>point.pivotDate),['2022-02-03']);
+  assert.equal(merged[0].isManual,true);
+  assert.ok(merged[0].selectedReferences.some(ref=>ref.type==='PEAK'));
+});
+test('historical detail cards read the saved scores without calculating from pivot records',()=>{
   const controller=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-insight.js'),'utf8');
-  const start=controller.indexOf('  function renderStoredPivotScores('),end=controller.indexOf('  function clearIndicatorSelection(',start);
+  const start=controller.indexOf('  function renderHistoricalPivotScores('),end=controller.indexOf('  function clearIndicatorSelection(',start);
   assert.ok(start>=0&&end>start);
-  const cards=Array.from({length:3},()=>{
-    const label={},body={};
-    return {label,body,classList:{toggle(){}},querySelector(selector){return selector==='strong'?label:selector==='p'?body:null;},append(){}};
+  const cards=[];
+  const root={hidden:false,replaceChildren(){cards.length=0;},append(node){if(node.className?.includes('historical-pivot-detail-grid'))cards.push(...node.children);}};
+  const createElement=()=>({className:'',textContent:'',children:[],classList:{toggle(){}},append(...children){this.children.push(...children);}});
+  const render=vm.runInNewContext(`${controller.slice(start,end)}\nrenderHistoricalPivotScores`,{
+    $:()=>root,document:{createElement},referenceOrder:['START','PEAK','TROUGH'],
+    indicatorValue:point=>String(point.pivotValue),appendDReviews:()=>{},relationshipLabel:relation=>relation
   });
-  const root={querySelectorAll:()=>cards};
-  const createElement=()=>({className:'',textContent:'',append(){}});
-  const render=vm.runInNewContext(`${controller.slice(start,end)}\nrenderStoredPivotScores`,{
-    window:{MacroWatchHistoricalPivotScoring:scoring},$ :()=>root,document:{createElement},referenceOrder:['START','PEAK','TROUGH'],
-    rawValueAtDate:(rows,date)=>rows.find(row=>row.time===date)?.value??null,
-    indicatorValue:point=>String(point.pivotValue),pivotReasonFor:()=>'',
-    relationshipLabel:relation=>relation
-  });
-  const points=[
-    {pivotDate:'2022-01-01',pivotValue:0,markerStatus:'confirmed',selectedReferences:[{type:'START'}]},
-    {pivotDate:'2022-02-01',pivotValue:10,markerStatus:'confirmed',selectedReferences:[{type:'PEAK'}]},
-    {pivotDate:'2022-03-01',pivotValue:5,markerStatus:'confirmed',selectedReferences:[{type:'TROUGH'}]}
-  ];
+  const score=(date,value)=>({pivotDate:date,pivotValue:value,offsetDays:0,relationship:'positive',
+    timelinessScore:100,relationshipSuitabilityScore:100,continuityScore:100,score:100,pivotReason:'저장된 근거'});
+  const byReference={START:score('2022-01-01',0),PEAK:score('2022-02-01',10),TROUGH:score('2022-03-01',5)};
+  const points=[{pivotDate:'2022-01-01'},{pivotDate:'2022-02-01'},{pivotDate:'2022-03-01'}];
   const snapshot=JSON.stringify(points);
-  render({storedPivots:points,displayPivots:points,rows:[
-    {time:'2022-01-01',value:0},{time:'2022-02-01',value:10},{time:'2022-03-01',value:5},{time:'2024-03-01',value:15}
-  ],meta:{}},{mode:'history',cycle:{startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'}});
+  const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
+  render({storedPivots:points,byReference,meta:{}},{mode:'history',cycle});
+  assert.equal(cards.length,3);
   for(const card of cards){
-    assert.match(card.body.textContent,/변곡 시의성 .*점 · 관계 적합성 100점 · 추세 지속성 100점/);
-    assert.match(card.label.textContent,/positive/);
+    assert.match(card.children[1].textContent,/변곡 시의성 100점 · 관계 적합성 100점 · 추세 지속성 100점/);
+    assert.match(card.children[0].textContent,/positive · 종합 점수 100점/);
   }
   assert.equal(JSON.stringify(points),snapshot);
-  render({storedPivots:points,displayPivots:[points[0],points[2]],rows:[
-    {time:'2022-01-01',value:0},{time:'2022-02-01',value:10},{time:'2022-03-01',value:5},{time:'2024-03-01',value:15}
-  ],meta:{}},{mode:'history',cycle:{startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'}});
-  assert.match(cards[1].label.textContent,/기준점 피봇 없음 · unclear/);
-  assert.match(cards[1].body.textContent,/관계 적합성 0점/);
+  render({storedPivots:points,byReference:{...byReference,PEAK:{referenceDate:cycle.peakDate,relationship:'unclear',score:0}},meta:{}},{mode:'history',cycle});
+  assert.match(cards[1].children[0].textContent,/기준점 피봇 없음 · unclear/);
+  assert.match(cards[1].children[1].textContent,/관계 적합성 0점/);
+  assert.doesNotMatch(controller.slice(start,end),/MacroWatchHistoricalPivotScoring|relationshipScore\(/);
 });
+
