@@ -163,12 +163,13 @@
       pivotOrder:Number.MAX_SAFE_INTEGER,pivotDate:pivot.pivotDate,pivotValue:pivot.pivotValue,
       selectionReason:[pivot.reason,pivot.comment].filter(Boolean).join('\n'),
       pivotReason:[pivot.reason,pivot.comment].filter(Boolean).join('\n'),
-      relationship:pivot.relationship,sourceDate:pivot.sourceDate,keyReference:pivot.keyReference,isManual:true
+      relationship:pivot.relationship,sourceDate:pivot.sourceDate,keyReference:pivot.keyReference,
+      keySuppressed:pivot.keySuppressed,isManual:true
     }))].sort((a,b)=>a.pivotDate.localeCompare(b.pivotDate));
     const classified=classifyStoredPivots(merged,cycle),manualKeys=new Map(active.filter(pivot=>pivot.keyReference).map(pivot=>[pivot.keyReference,pivot.sourceDate]));
     const referenceDates={START:cycle?.startDate,PEAK:cycle?.peakDate,TROUGH:cycle?.troughDate};
     return classified.map(pivot=>{
-      let selectedReferences=(pivot.selectedReferences||[]).filter(ref=>!manualKeys.has(ref.type)||pivot.sourceDate===manualKeys.get(ref.type));
+      let selectedReferences=(pivot.selectedReferences||[]).filter(ref=>!pivot.keySuppressed&&(!manualKeys.has(ref.type)||pivot.sourceDate===manualKeys.get(ref.type)));
       if(pivot.isManual&&pivot.keyReference){const date=referenceDates[pivot.keyReference];selectedReferences=[...selectedReferences.filter(ref=>ref.type!==pivot.keyReference),{type:pivot.keyReference,date,offsetDays:date?Math.round((Date.parse(pivot.pivotDate)-Date.parse(date))/86400000):null}];}
       const overridden=pivot.markerStatus==='confirmed'&&!selectedReferences.length;
       return Object.freeze({...pivot,selectedReferences:Object.freeze(selectedReferences),markerStatus:pivot.isManual&&!pivot.keyReference?(selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard'):overridden?'overridden_key':selectedReferences.length?'confirmed':pivot.markerStatus});
@@ -192,6 +193,8 @@
     const manual=(item.manualPivots||[]).find(pivot=>!pivot.isDeleted&&pivot.pivotDate===point.date)
       ||(item.manualPivots||[]).find(pivot=>pivot.sourceDate===point.date||pivot.pivotDate===point.date);
     const automatic=(item.storedPivots||[]).find(pivot=>pivot.pivotDate===point.date);
+    const classified=effectivePivots(item,activeIndicatorContext).find(pivot=>pivot.pivotDate===point.date);
+    const keyReference=manual?.keyReference||classified?.selectedReferences?.[0]?.type||'';
     const existing=Boolean(manual&&!manual.isDeleted||automatic);
     manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||point.date,item,existing};
     $('historical-manual-pivot-title').textContent=`${item.meta.title} · ${existing?'변곡점 수정':'변곡점 추가'}`;
@@ -199,8 +202,8 @@
     $('historical-manual-pivot-relationship').value=manual&&!manual.isDeleted?manual.relationship||'':'';
     $('historical-manual-pivot-reason').value=manual&&!manual.isDeleted?manual.reason||'':'';
     $('historical-manual-pivot-comment').value=manual&&!manual.isDeleted?manual.comment||'':'';
-    $('historical-manual-pivot-is-key').checked=Boolean(manual&&!manual.isDeleted&&manual.keyReference);
-    $('historical-manual-pivot-reference').value=manual&&!manual.isDeleted?manual.keyReference||'':'';
+    $('historical-manual-pivot-is-key').checked=classified?.markerStatus==='confirmed';
+    $('historical-manual-pivot-reference').value=keyReference;
     $('historical-manual-pivot-reference').disabled=!$('historical-manual-pivot-is-key').checked;
     $('historical-manual-pivot-delete').hidden=!existing;
     $('historical-manual-pivot-status').textContent='';
