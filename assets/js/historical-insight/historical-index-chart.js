@@ -12,10 +12,21 @@
   }
   class PivotTimeAxisRenderer {
     constructor(view){this.view=view;}
-    draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.paneView.x;if(x===null)return;const h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h);if(px<0||px>scope.bitmapSize.width)return;const ctx=scope.context,labelHeight=18*v,labelGap=2*v,labelTop=scope.bitmapSize.height-(this.view.lane+1)*labelHeight-this.view.lane*labelGap-3*v,padX=5*h;ctx.save();ctx.font=`${10*v}px Pretendard, sans-serif`;ctx.textBaseline='middle';const labelWidth=ctx.measureText(this.view.date).width+padX*2,labelX=Math.max(2*h,Math.min(px-labelWidth/2,scope.bitmapSize.width-labelWidth-2*h));ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,labelTop);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=this.view.color;ctx.fillRect(labelX,labelTop,labelWidth,labelHeight);ctx.fillStyle=this.view.textColor;ctx.fillText(this.view.date,labelX+padX,labelTop+labelHeight/2);ctx.restore();});}
+    draw(target){target.useBitmapCoordinateSpace(scope=>{
+      const x=this.view.paneView.x;
+      if(x===null){this.view.bounds=null;return;}
+      const h=scope.horizontalPixelRatio,v=scope.verticalPixelRatio,px=Math.round(x*h);
+      if(px<0||px>scope.bitmapSize.width){this.view.bounds=null;return;}
+      const ctx=scope.context,labelHeight=18*v,labelGap=2*v,labelTop=scope.bitmapSize.height-(this.view.lane+1)*labelHeight-this.view.lane*labelGap-3*v,padX=5*h;
+      ctx.save();ctx.font=`${10*v}px Pretendard, sans-serif`;ctx.textBaseline='middle';
+      const labelWidth=ctx.measureText(this.view.date).width+padX*2,labelX=Math.max(2*h,Math.min(px-labelWidth/2,scope.bitmapSize.width-labelWidth-2*h));
+      this.view.bounds={left:labelX/h,right:(labelX+labelWidth)/h,top:labelTop/v,bottom:(labelTop+labelHeight)/v};
+      ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,labelTop);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle=this.view.color;ctx.fillRect(labelX,labelTop,labelWidth,labelHeight);ctx.fillStyle=this.view.textColor;ctx.fillText(this.view.date,labelX+padX,labelTop+labelHeight/2);ctx.restore();
+    });}
   }
   class PivotTimeAxisPaneView {
-    constructor(paneView,date,color,textColor,lane=0){this.paneView=paneView;this.date=date;this.color=color;this.textColor=textColor;this.lane=lane;this.rendererInstance=new PivotTimeAxisRenderer(this);}
+    constructor(paneView,date,color,textColor,lane=0){this.paneView=paneView;this.date=date;this.color=color;this.textColor=textColor;this.lane=lane;this.bounds=null;this.rendererInstance=new PivotTimeAxisRenderer(this);}
     renderer(){return this.rendererInstance;}
     zOrder(){return 'top';}
   }
@@ -152,6 +163,22 @@
         break;
       }
     }
+    function onTimeAxisClick(event) {
+      if (!indicatorPointClick || !chart || event.button!==0) return;
+      const rect=host.getBoundingClientRect(),timeScale=chart.timeScale();
+      const x=event.clientX-rect.left-chart.priceScale('left').width();
+      const y=event.clientY-rect.top-(host.clientHeight-timeScale.height());
+      if(y<0||y>timeScale.height())return;
+      for(const [code,item] of indicatorSeries){
+        for(const primitive of item.primitives){
+          const bounds=primitive.timeAxisPaneView.bounds;
+          if(!bounds||x<bounds.left||x>bounds.right||y<bounds.top||y>bounds.bottom)continue;
+          const date=primitive.view.time,value=pointValueAt(item.rows,date,'rawValue',timeScale.timeToCoordinate(date));
+          if(Number.isFinite(value))indicatorPointClick({code,date,value});
+          return;
+        }
+      }
+    }
     function ensure() {
       if (chart) return;
       if (!window.LightweightCharts) throw new Error('차트 라이브러리를 불러오지 못했습니다.');
@@ -165,7 +192,7 @@
         crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal,
           horzLine: { labelVisible: false } },
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
-        handleScale: { axisPressedMouseMove: { time: true, price: false }, mouseWheel: true, pinch: true },
+        handleScale: { axisPressedMouseMove: { time: false, price: false }, mouseWheel: true, pinch: true },
       });
       series = chart.addLineSeries({ color: lineColor(), lineWidth: 2, priceLineVisible: false,
         lastValueVisible: true, priceFormat: { type: 'custom', minMove: .01,
@@ -173,6 +200,7 @@
       ensureCrosshairOverlay();
       chart.subscribeCrosshairMove(updateCrosshair);
       chart.subscribeClick(onChartClick);
+      host.addEventListener('click',onTimeAxisClick,true);
       window.addEventListener('macrowatch:themechange', updateLine);
     }
     return Object.freeze({
@@ -227,6 +255,7 @@
         window.removeEventListener('macrowatch:themechange', updateLine);
         chart?.unsubscribeCrosshairMove(updateCrosshair);
         chart?.unsubscribeClick(onChartClick);
+        host.removeEventListener('click',onTimeAxisClick,true);
         chart?.remove();
         chart = null;
         series = null;
