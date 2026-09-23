@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v3';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v4';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -107,14 +107,19 @@ function relationship({pivots, rows, from, to, benchmarkEnd, expectedDirection, 
     if (!Number.isFinite(a) || !Number.isFinite(b)) return {relationship: 'unclear', score: 0};
     segments.push({direction: Math.sign(b - a), days: days(points[i - 1], points[i])});
   }
+  const startValue = valueAt(rows, from);
+  const priorPivots = pivots.filter(pivot => pivot.pivotDate < from)
+    .sort((a, b) => b.pivotDate.localeCompare(a.pivotDate));
+  const entryDirection = priorPivots.map(pivot => Math.sign(startValue - pivot.pivotValue))
+    .find(direction => direction) || 0;
+  const savedDirection = manualRelationship === 'positive' ? expectedDirection
+    : manualRelationship === 'inverse' ? -expectedDirection : 0;
   const totals = {up: 0, down: 0};
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
     let direction = segment.direction;
-    if (!direction) direction = segments.slice(0, i).reverse().find(value => value.direction)?.direction
-      || segments.slice(i + 1).find(value => value.direction)?.direction || 0;
-    if (!direction && ['positive', 'inverse'].includes(manualRelationship))
-      direction = manualRelationship === 'positive' ? expectedDirection : -expectedDirection;
+    if (!direction) direction = savedDirection
+      || segments.slice(0, i).reverse().find(value => value.direction)?.direction || entryDirection;
     if (direction > 0) totals.up += segment.days * (segment.direction ? 1 : .5);
     if (direction < 0) totals.down += segment.days * (segment.direction ? 1 : .5);
   }
