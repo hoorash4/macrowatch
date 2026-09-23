@@ -41,7 +41,7 @@ MacroWatch는 Evotive Research의 거시경제·시장 모니터링 대시보드
 
 Historical Insight는 처음부터 단계별 구현을 전제로 한다. 화면 골격, 시장지수 조회, 사례 정의, 국면 계산, 마커, 저장, 현재 비교를 한 파일에 섞지 않고 책임별 모듈로 분리한다. 공통 Supabase 연결, 숫자 포맷, 전체 페이지 조회(`queryAll`), 차트 테마·등록/해제는 `frontend-core`를 재사용한다. 경제지표 차트도 동일한 페이지 조회 함수를 사용한다. Historical Insight의 크기 관찰은 Lightweight Charts의 `autoSize`로 처리한다. 사이클 정의의 세부 계약과 현재 확정 기준점은 `HISTORICAL_CYCLE_DEFINITION.md`를 기준으로 한다.
 
-과거 국면 상세 하단의 베스트 지표 Top 3는 선택한 국면·지수의 지표 목록과 동일한 저장 점수(`byReference.LIST.score`) 및 동점 정렬 결과를 그대로 표시한다. 별도 평가·점수 계산은 하지 않으며 현재국면 분석에는 적용하지 않는다.
+과거 국면 상세 하단의 베스트 지표 Top 3는 삼색 기준점 요약 영역 아래의 독립된 한 줄 띠에 표시한다. 해당 국면에서 S&P 500·NASDAQ Composite·KOSPI 세 지수별로 저장된 현행 `by_reference.LIST.score`를 지표별로 합산해 순위를 매긴다. 저장되지 않았거나 구버전인 점수는 새로 추정하지 않으며, 선택한 지수의 지표 목록 순위·점수는 기존대로 유지한다. 현재국면 분석에는 적용하지 않는다.
 
 경제지표 metadata는 `economic-series-catalog.js`가 코드·표시명·범주·주기·단위의 단일 기준점이다. Historical Insight의 지표 사용 가능 여부는 canonical `economic_chart_series_points`를 집계한 `economic_chart_series_coverage`의 실제 최초·최종 관측일로 판정한다. 추세 구조는 원래 관측 주기를 보존한 raw 값과 주기별 smoothing으로 판정하고, 차트 오버레이에만 표시 구간별 0~100 정규화를 사용한다. smoothing은 구조 판정에만 쓰며 최종 피봇 날짜와 값은 raw 시계열의 실제 극점 또는 실제 추세 출발점으로 되돌린다. `pivotDate`, `regimeBoundaryDate`, `breakoutOrBreakdownDate`, `confirmationDate`, `confirmationEvidence`는 별도 필드다. 방향 추세에서 끝나는 전환은 실제 극점을 보존한다. sideways에서 방향 추세로 나가는 전환은 breakout/breakdown으로 이어진 raw 시계열의 실제 출발 극점을 피봇으로 사용하고, range 이탈일은 확인 근거로 별도 저장한다.
 
