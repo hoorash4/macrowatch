@@ -75,10 +75,16 @@ def test_replace_stored_pivots_uses_atomic_rpc():
     class FakeDb:
         def __init__(self):
             self.call = None
+            self.score_calls = []
 
         def request(self, method, table, **kwargs):
+            if table == "historical_cases":
+                return [{"primary_index_code": "SP500", "pivot_source_index_code": "NASDAQ_COMPOSITE"}]
             self.call = (method, table, kwargs)
             return 2
+
+        def invoke_function(self, name, body):
+            self.score_calls.append((name, body))
 
     db = FakeDb()
     count = replace_stored_pivots(
@@ -106,6 +112,8 @@ def test_replace_stored_pivots_uses_atomic_rpc():
     assert kwargs["body"]["p_buffer_end"] == "2024-12-28"
     assert kwargs["body"]["p_source_point_count"] == 2
     assert kwargs["body"]["p_input_sha256"] == "a" * 64
+    assert [body["index_code"] for _, body in db.score_calls] == ["SP500", "NASDAQ_COMPOSITE", "KOSPI"]
+    assert all(name == "historical-score-rebuild" for name, _ in db.score_calls)
 
 
 def test_source_input_sha256_is_stable_for_row_order_and_numeric_representation():
@@ -118,3 +126,4 @@ def test_source_input_sha256_is_stable_for_row_order_and_numeric_representation(
         {"observation_date": "2020-01-02", "value": 1.5, "frequency": "D"},
     ]
     assert source_input_sha256(rows_a) == source_input_sha256(rows_b)
+
