@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v4';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v5';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -97,18 +97,20 @@ function valueAt(rows, date) {
   const a = day(before.observation_date), b = day(after.observation_date);
   return Number(before.value) + (Number(after.value) - Number(before.value)) * (day(date) - a) / (b - a);
 }
-function relationship({pivots, rows, from, to, benchmarkEnd, expectedDirection, factor, manualRelationship}) {
+function relationship({pivots, rows, from, to, benchmarkEnd, expectedDirection, factor, manualRelationship, startingPivot}) {
   const totalDays = days(from, benchmarkEnd);
   if (totalDays <= 0 || !factor || manualRelationship === 'unclear') return {relationship: manualRelationship || 'unclear', score: 0};
-  const points = [from, ...intermediates(pivots, from, to).map(pivot => pivot.pivotDate), to];
+  const coveredFrom = startingPivot?.pivotDate > from ? startingPivot.pivotDate : from;
+  if (coveredFrom >= to) return {relationship: manualRelationship || 'unclear', score: 0};
+  const points = [coveredFrom, ...intermediates(pivots, coveredFrom, to).map(pivot => pivot.pivotDate), to];
   const segments = [];
   for (let i = 1; i < points.length; i++) {
     const a = valueAt(rows, points[i - 1]), b = valueAt(rows, points[i]);
     if (!Number.isFinite(a) || !Number.isFinite(b)) return {relationship: 'unclear', score: 0};
     segments.push({direction: Math.sign(b - a), days: days(points[i - 1], points[i])});
   }
-  const startValue = valueAt(rows, from);
-  const priorPivots = pivots.filter(pivot => pivot.pivotDate < from)
+  const startValue = valueAt(rows, coveredFrom);
+  const priorPivots = pivots.filter(pivot => pivot.pivotDate < coveredFrom)
     .sort((a, b) => b.pivotDate.localeCompare(a.pivotDate));
   const entryDirection = priorPivots.map(pivot => Math.sign(startValue - pivot.pivotValue))
     .find(direction => direction) || 0;
@@ -142,7 +144,8 @@ export function scoreReferences({pivots, rows, cycle}) {
     const to = firstAfterTrough?.pivotDate || benchmarkEnd;
     const factor = pivot?.markerStatus === 'confirmed' ? 1 : pivot ? .5 : 0;
     const relation = pivot ? relationship({pivots, rows, from, to, benchmarkEnd,
-      expectedDirection: type === 'PEAK' ? -1 : 1, factor, manualRelationship: pivot.isManual ? pivot.relationship : null})
+      expectedDirection: type === 'PEAK' ? -1 : 1, factor, manualRelationship: pivot.isManual ? pivot.relationship : null,
+      startingPivot: pivot})
       : {relationship: 'unclear', score: 0};
     const continuityStart = type === 'TROUGH' ? from : pivot?.pivotDate;
     const next = pivot ? intermediates(pivots, continuityStart, benchmarkEnd)[0] : null;
