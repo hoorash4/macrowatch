@@ -3,6 +3,9 @@ project_id = "xhghpywvthjuvespzdul"
 [functions.news-pipeline]
 verify_jwt = false
 
+[functions.historical-score-rebuild]
+verify_jwt = true
+
 [functions.ai-model-monitor]
 verify_jwt = false
 
@@ -23,3 +26,4 @@ verify_jwt = true
 [functions.earnings-financial-company-source]
 # 함수 본문에서 EARNINGS_FINANCIAL_SOURCE_TOKEN의 정확한 일치를 별도로 검증한다.
 verify_jwt = false
+
