@@ -11,7 +11,7 @@
   <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="assets/css/styles.css?v=194">
   <link rel="stylesheet" href="assets/css/economic-charts.css?v=12">
-  <link rel="stylesheet" href="assets/css/historical-insight.css?v=33">
+  <link rel="stylesheet" href="assets/css/historical-insight.css?v=34">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="assets/js/core/config.js?v=1"></script>
@@ -193,7 +193,7 @@
       </div>
       <form id="historical-manual-pivot-form">
         <label>날짜<input id="historical-manual-pivot-date" type="date" required></label>
-        <label>정·역관계<select id="historical-manual-pivot-relationship" required><option value="">선택</option><option value="positive">정관계</option><option value="inverse">역관계</option></select></label>
+        <label>정·역관계<select id="historical-manual-pivot-relationship" required><option value="">선택</option><option value="positive">정관계</option><option value="inverse">역관계</option><option value="unclear">불명확</option></select></label>
         <label class="historical-manual-pivot-key"><input id="historical-manual-pivot-is-key" type="checkbox">핵심 변곡점</label>
         <label>지수 기준점<select id="historical-manual-pivot-reference" disabled><option value="">선택</option><option value="START">START</option><option value="PEAK">PEAK</option><option value="TROUGH">TROUGH</option></select></label>
         <label>선택 근거<select id="historical-manual-pivot-reason" required></select></label>
