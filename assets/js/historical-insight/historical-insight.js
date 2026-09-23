@@ -23,7 +23,8 @@
     '급등 이후 이전보다 높은 수준을 유지하며 중장기 흐름이 달라졌습니다.',
     '급락 이후 이전보다 낮은 수준에 머물며 중장기 흐름이 달라졌습니다.',
     '기존 추세를 크게 뛰어넘는 급등의 시작점입니다.',
-    '기존 추세를 크게 밑도는 급락의 시작점입니다.'
+    '기존 추세를 크게 밑도는 급락의 시작점입니다.',
+    '이전/이후 추세가 불명확 합니다.'
   ]);
 
   function state(kind,text){host.dataset.state=kind;host.setAttribute('aria-busy',String(kind==='loading'));status.textContent=text;message.textContent=kind==='ready'?'':text;message.hidden=kind==='ready';retry.hidden=kind!=='error';fullRange.disabled=caseRange.disabled=kind!=='ready';}
