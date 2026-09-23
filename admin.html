@@ -179,6 +179,21 @@
       <p id="ai-model-email-status" class="mt-4 text-xs text-slate-400">마지막 이메일 알림: 불러오는 중</p>
     </section>
 
+    <section data-admin-card-id="historical-pivot-reasons" class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
+      <details class="group">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-3 text-lg font-bold text-white">
+          <span><i class="fa-solid fa-quote-left mr-2 text-fuchsia-400"></i>피봇 근거 문구</span>
+          <i class="fa-solid fa-chevron-right text-sm text-slate-400 transition group-open:rotate-90"></i>
+        </summary>
+        <p class="mt-2 text-sm text-slate-400">히스토리컬 변곡점 입력창의 선택 문구를 관리합니다. 수정·삭제해도 이미 저장된 피봇 근거는 유지됩니다.</p>
+        <form id="historical-pivot-reason-form" class="mt-4 flex flex-col gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-4 sm:flex-row">
+          <input id="historical-pivot-reason-input" required maxlength="250" placeholder="새 피봇 근거 문구" aria-label="새 피봇 근거 문구" class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-fuchsia-500">
+          <button type="submit" class="rounded-lg bg-fuchsia-700 px-4 py-2 text-sm font-bold text-white hover:bg-fuchsia-600">문구 추가</button>
+        </form>
+        <div id="historical-pivot-reason-list" class="mt-4 overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60"><p class="p-4 text-center text-sm text-slate-500">문구 목록을 불러오는 중입니다.</p></div>
+      </details>
+    </section>
+
     <section data-admin-card-id="automation-schedules" class="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
       <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div><h2 class="text-lg font-bold text-white"><i class="fa-solid fa-clock-rotate-left mr-2 text-blue-400"></i>자동 수집 일정</h2><p class="mt-1 text-sm leading-relaxed text-slate-400">카드와 수집 단계를 시간순으로 관리합니다. 시간은 한국 표준시이며, 삭제는 확인 창에서 한 번 더 확인한 뒤 실행됩니다.</p></div>
@@ -264,7 +279,7 @@
   <script src="assets/js/core/frontend-core.js?v=3"></script>
   <script src="assets/js/admin/admin-graph-catalog.js?v=3"></script>
   <script src="assets/js/admin/admin-card-order.js?v=2"></script>
-  <script src="assets/js/admin/admin.js?v=32"></script>
+  <script src="assets/js/admin/admin.js?v=33"></script>
   <script src="assets/js/admin/admin-schedule-guard.js?v=1"></script>
   <script src="assets/js/admin/admin-policy-review.js?v=16"></script>
 </body>
