@@ -157,6 +157,14 @@ test('selected historical case expands its summary and performance above the unc
   assert.match(css,/\.historical-cycle-points strong \{[^}]*font-size: 17px/);
   assert.match(css,/\.historical-cycle-points span \{[^}]*font-size: 15px/);
 });
+test('cycle accent continues to the primary pivot cards in red green blue order', () => {
+  const css=read('assets/css/historical-insight.css'), controller=read('assets/js/historical-insight/historical-insight.js');
+  assert.match(css,/\.historical-cycle-panel::before[^\n]*#dc2626 0 34%, #16a34a 34% 67%, #2563eb 67%/);
+  assert.match(css,/\.historical-cycle-panel:has\(\+ \.historical-indicator-detail:not\(\[hidden\]\)\)::before/);
+  assert.match(css,/\.historical-indicator-primary::before[^\n]*#16a34a 0 42%, #2563eb 42%/);
+  assert.match(controller,/primary\.append\(grid\);root\.append\(primary\)/);
+  assert.match(controller,/root\.append\(darkHeading,darkGrid\)/);
+});
 test('analysis tabs separate current regime from the historical case list and enlarge their labels', () => {
   const html=read('historical-insight.html'), css=read('assets/css/historical-insight.css'), controller=read('assets/js/historical-insight/historical-insight.js');
   assert.match(html,/data-historical-mode="history">과거사례 분석<\/button>/);
