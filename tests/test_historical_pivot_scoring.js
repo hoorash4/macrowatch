@@ -123,7 +123,7 @@ test('composite uses only the approved 4:3:3 weights and floors the result',()=>
 
 test('stored scores match the existing front-end formulas for all three references',async()=>{
   const {mergedPivots,scoreReferences,SCORE_VERSION}=await storedScoring;
-  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v7');
+  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v8');
   const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
   const automatic=['2022-01-01','2022-02-01','2022-03-01'].map((date,index)=>({pivot_order:index,pivot_date:date,pivot_value:[0,10,5][index]}));
   const pivots=mergedPivots({automatic,manual:[],cycle,indexCode:'SP500'});
@@ -224,6 +224,26 @@ test('stored score input keeps manual deletion and the surviving manual pivot se
   assert.deepEqual(merged.map(point=>point.pivotDate),['2022-02-03']);
   assert.equal(merged[0].isManual,true);
   assert.ok(merged[0].selectedReferences.some(ref=>ref.type==='PEAK'));
+});
+
+test('an administrator key-off stays dark on its index while another index keeps its key',async()=>{
+  const {mergedPivots,scoreReferences}=await storedScoring;
+  const cycle={startDate:'2022-01-05',peakDate:'2022-07-01',troughDate:'2023-01-01'};
+  const automatic=[{pivot_order:0,pivot_date:'2022-01-05',pivot_value:5},
+    {pivot_order:1,pivot_date:'2022-01-20',pivot_value:6}];
+  const manual=[{source_date:'2022-01-05',pivot_date:'2022-01-05',pivot_value:5,
+    relationship:'positive',reason:'관리자 지정',key_references:{SP500:false,NASDAQ_COMPOSITE:'START'},is_deleted:false}];
+  const sp=mergedPivots({automatic,manual,cycle,indexCode:'SP500'});
+  const nasdaq=mergedPivots({automatic,manual,cycle,indexCode:'NASDAQ_COMPOSITE'});
+  assert.equal(sp.find(pivot=>pivot.pivotDate==='2022-01-05').markerStatus,'manual_standard');
+  assert.equal(sp.find(pivot=>pivot.pivotDate==='2022-01-20').markerStatus,'near_miss');
+  assert.equal(nasdaq.find(pivot=>pivot.pivotDate==='2022-01-05').markerStatus,'confirmed');
+  const rows=[{observation_date:'2022-01-05',value:5},{observation_date:'2022-01-20',value:6},
+    {observation_date:'2022-07-01',value:7},{observation_date:'2023-01-01',value:8}];
+  const spScores=scoreReferences({pivots:sp,rows,cycle});
+  assert.notEqual(spScores.START.markerStatus,'confirmed');
+  assert.equal(spScores.LIST.darkPivots.some(pivot=>pivot.pivotDate==='2022-01-05'),true);
+  assert.equal(scoreReferences({pivots:nasdaq,rows,cycle}).START.markerStatus,'confirmed');
 });
 
 test('one saved manual pivot remains the same date across three independently scored market cycles',async()=>{
