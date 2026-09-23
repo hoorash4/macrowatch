@@ -39,11 +39,7 @@
       .sort((left,right)=>left.pivotDate.localeCompare(right.pivotDate));
   }
   function endpointFactor(startPivot,endPivot,type){
-    if(type==='TROUGH')return startPivot?.markerStatus==='confirmed'?1:startPivot?.markerStatus?0.5:0;
-    if(!startPivot&&!endPivot)return 0;
-    if(!startPivot||!endPivot)return 0.25;
-    const magentaCount=Number(startPivot.markerStatus==='confirmed')+Number(endPivot.markerStatus==='confirmed');
-    return magentaCount===2?1:magentaCount===1?0.75:0.5;
+    return startPivot?.markerStatus==='confirmed'?1:startPivot?.markerStatus?0.5:0;
   }
   function relationshipScore({pivots,fromDate,toDate,benchmarkEndDate=toDate,rows,valueAtDate,expectedDirection,factor,manualRelationship}){
     const totalDays=days(fromDate,benchmarkEndDate);
@@ -64,6 +60,8 @@
         direction=segments.slice(0,index).reverse().find(previous=>previous.direction)?.direction||0;
         if(!direction)direction=segments.slice(index+1).find(next=>next.direction)?.direction||0;
       }
+      if(!direction&&['positive','inverse'].includes(manualRelationship))
+        direction=manualRelationship==='positive'?expectedDirection:-expectedDirection;
       if(direction>0)totals.up+=segment.days*(segment.direction?1:0.5);
       if(direction<0)totals.down+=segment.days*(segment.direction?1:0.5);
     }
