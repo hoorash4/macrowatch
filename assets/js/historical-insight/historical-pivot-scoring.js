@@ -52,16 +52,18 @@
       if(!Number.isFinite(start)||!Number.isFinite(end))return {relationship:'unclear',score:0};
       segments.push({direction:Math.sign(end-start),days:days(left.pivotDate,right.pivotDate)});
     }
+    const startValue=valueAtDate(rows,fromDate);
+    const priorPivots=[...(pivots||[])].filter(pivot=>pivot.pivotDate<fromDate)
+      .sort((left,right)=>right.pivotDate.localeCompare(left.pivotDate));
+    const entryDirection=priorPivots.map(pivot=>Math.sign(startValue-(Number.isFinite(pivot.pivotValue)?pivot.pivotValue:valueAtDate(rows,pivot.pivotDate))))
+      .find(direction=>direction)||0;
+    const savedDirection=manualRelationship==='positive'?expectedDirection:manualRelationship==='inverse'?-expectedDirection:0;
     const totals={up:0,down:0};
     for(let index=0;index<segments.length;index++){
       const segment=segments[index];
       let direction=segment.direction;
-      if(!direction){
-        direction=segments.slice(0,index).reverse().find(previous=>previous.direction)?.direction||0;
-        if(!direction)direction=segments.slice(index+1).find(next=>next.direction)?.direction||0;
-      }
-      if(!direction&&['positive','inverse'].includes(manualRelationship))
-        direction=manualRelationship==='positive'?expectedDirection:-expectedDirection;
+      if(!direction)direction=savedDirection
+        ||segments.slice(0,index).reverse().find(previous=>previous.direction)?.direction||entryDirection;
       if(direction>0)totals.up+=segment.days*(segment.direction?1:0.5);
       if(direction<0)totals.down+=segment.days*(segment.direction?1:0.5);
     }
