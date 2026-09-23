@@ -364,6 +364,50 @@
     }));
   }
 
+  function renderHistoricalPivotReasons(items) {
+    const list = document.getElementById('historical-pivot-reason-list');
+    if (!items.length) {
+      list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 문구가 없습니다.</p>';
+      return;
+    }
+    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><div class="flex flex-col gap-2 sm:flex-row"><input data-pivot-reason-id="${escapeHtml(item.id)}" value="${escapeHtml(item.phrase)}" maxlength="250" aria-label="피봇 근거 문구" class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-fuchsia-500"><div class="flex gap-2"><button type="button" data-save-pivot-reason="${escapeHtml(item.id)}" class="rounded-lg border border-fuchsia-700 px-3 py-2 text-xs font-bold text-fuchsia-300 hover:bg-fuchsia-950/50">저장</button><button type="button" data-delete-pivot-reason="${escapeHtml(item.id)}" class="rounded-lg border border-red-700 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button></div></div></article>`).join('');
+    list.querySelectorAll('[data-save-pivot-reason]').forEach((button) => button.addEventListener('click', async () => {
+      const id = button.dataset.savePivotReason;
+      button.disabled = true;
+      try {
+        await invokeAdmin('save_historical_pivot_reason_preset', { id, phrase: list.querySelector(`[data-pivot-reason-id="${id}"]`).value });
+        await loadHistoricalPivotReasons();
+      } catch (error) { showNotice('문구 저장 실패', error.message || '저장하지 못했습니다.', true); button.disabled = false; }
+    }));
+    list.querySelectorAll('[data-delete-pivot-reason]').forEach((button) => button.addEventListener('click', async () => {
+      if (!window.confirm('이 문구를 선택 목록에서 삭제할까요? 이미 저장된 피봇 근거는 유지됩니다.')) return;
+      button.disabled = true;
+      try {
+        await invokeAdmin('delete_historical_pivot_reason_preset', { id: button.dataset.deletePivotReason });
+        await loadHistoricalPivotReasons();
+      } catch (error) { showNotice('문구 삭제 실패', error.message || '삭제하지 못했습니다.', true); button.disabled = false; }
+    }));
+  }
+
+  async function loadHistoricalPivotReasons() {
+    const list = document.getElementById('historical-pivot-reason-list');
+    try { renderHistoricalPivotReasons((await invokeAdmin('list_historical_pivot_reason_presets')).items || []); }
+    catch (error) { list.innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '문구 목록을 불러오지 못했습니다.')}</p>`; }
+  }
+
+  async function addHistoricalPivotReason(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      await invokeAdmin('save_historical_pivot_reason_preset', { phrase: document.getElementById('historical-pivot-reason-input').value });
+      form.reset();
+      await loadHistoricalPivotReasons();
+    } catch (error) { showNotice('문구 추가 실패', error.message || '추가하지 못했습니다.', true); }
+    finally { button.disabled = false; }
+  }
+
   async function loadExtremeNewsRules() {
     const list = document.getElementById('extreme-news-rule-list');
     try { renderExtremeNewsRules((await invokeAdmin('list_extreme_news_rules')).items || []); }
@@ -523,6 +567,7 @@
       await loadEarningsV2Pending();
       await loadSectorEtfs();
       await loadExtremeNewsRules();
+      await loadHistoricalPivotReasons();
       await loadMembers();
       await loadAutomationSchedules();
     } catch (error) {
@@ -622,6 +667,7 @@
     document.getElementById('refresh-automation-schedules-button').addEventListener('click', loadAutomationSchedules);
     document.getElementById('sector-etf-form').addEventListener('submit', addSectorEtf);
     document.getElementById('extreme-news-rule-form').addEventListener('submit', addExtremeNewsRule);
+    document.getElementById('historical-pivot-reason-form').addEventListener('submit', addHistoricalPivotReason);
     document.getElementById('member-form').addEventListener('submit', createMember);
     document.getElementById('operation-close').addEventListener('click', hideNotice);
     document.querySelectorAll('[data-change-ai-model]').forEach((button) => {
