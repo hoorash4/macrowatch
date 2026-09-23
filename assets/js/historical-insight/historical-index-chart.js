@@ -170,7 +170,7 @@
       const y=event.clientY-rect.top-(host.clientHeight-timeScale.height());
       if(y<0||y>timeScale.height())return;
       for(const [code,item] of indicatorSeries){
-        for(const primitive of item.primitives){
+        for(const primitive of [...item.primitives].reverse()){
           const bounds=primitive.timeAxisPaneView.bounds;
           if(!bounds||x<bounds.left||x>bounds.right||y<bounds.top||y>bounds.bottom)continue;
           const date=primitive.view.time,value=pointValueAt(item.rows,date,'rawValue',timeScale.timeToCoordinate(date));
