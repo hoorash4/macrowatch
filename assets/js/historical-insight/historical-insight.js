@@ -400,7 +400,7 @@
     const darkPivots=item.byReference?.LIST?.darkPivots||[];
     if(darkPivots.length){
       const darkHeading=document.createElement('strong'),darkGrid=document.createElement('div');
-      darkHeading.className='historical-pivot-dark-heading';darkHeading.textContent='진회색 피봇';
+      darkHeading.className='historical-pivot-dark-heading';darkHeading.textContent='유사 변곡점';
       darkGrid.className='historical-indicator-result-grid historical-pivot-detail-grid';
       darkPivots.forEach(score=>appendCard(darkGrid,score.referenceType,score,true));
       root.append(darkHeading,darkGrid);
