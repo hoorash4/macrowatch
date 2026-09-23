@@ -248,7 +248,7 @@ test('single indicator selection preserves the visible calendar range and keeps 
   assert.match(chart,/timeAxisPaneViews\(\)\{return \[this\.timeAxisPaneView\];\}/);
   assert.match(chart,/ctx\.lineTo\(px,labelTop\)/);
   assert.match(chart,/minimumHeight: 46/);
-  assert.match(chart,/axisPressedMouseMove: \{ time: true, price: false \}/);
+  assert.match(chart,/axisPressedMouseMove: \{ time: false, price: false \}/);
   assert.match(css,/\.historical-chart-region \{ flex: 1 0 510px; \}/);
   assert.match(css,/@media\(max-width:850px\)\{\.historical-chart-region\{flex-basis:645px\}/);
   assert.doesNotMatch(chart,/pivotText|timingText|fillText\(this\.view\.label/);
@@ -258,6 +258,32 @@ test('single indicator selection preserves the visible calendar range and keeps 
   assert.match(controller,/input\.type='radio'/);
   assert.match(controller,/historical-indicator-clear/);assert.doesNotMatch(controller,/최대 5개/);
   assert.match(controller,/badge\.className='historical-reference-badge'/);
+});
+test('only a displayed indicator pivot date label opens the existing point modal', () => {
+  const source=read('assets/js/historical-insight/historical-index-chart.js');
+  const from=source.indexOf('    function onTimeAxisClick('),to=source.indexOf('    function ensure()',from);
+  assert.ok(from>=0&&to>from);
+  const opened=[],scope={
+    indicatorPointClick:point=>opened.push(point),
+    chart:{timeScale:()=>({height:()=>46,timeToCoordinate:()=>60}),priceScale:()=>({width:()=>34})},
+    host:{clientHeight:500,getBoundingClientRect:()=>({left:100,top:200})},
+    indicatorSeries:new Map([['NFCI_RISK',{rows:[],primitives:[{
+      view:{time:'2022-10-07'},timeAxisPaneView:{bounds:{left:40,right:120,top:20,bottom:38}}
+    }]}]]),
+    pointValueAt:()=>-0.11
+  };
+  const click=vm.runInNewContext(`${source.slice(from,to)}\nonTimeAxisClick`,scope);
+  click({button:0,clientX:194,clientY:679});
+  assert.equal(opened.length,1);
+  assert.equal(opened[0].code,'NFCI_RISK');
+  assert.equal(opened[0].date,'2022-10-07');
+  assert.equal(opened[0].value,-0.11);
+  click({button:0,clientX:260,clientY:679});
+  click({button:0,clientX:194,clientY:640});
+  click({button:2,clientX:194,clientY:679});
+  assert.equal(opened.length,1);
+  assert.match(source,/host\.addEventListener\('click',onTimeAxisClick,true\)/);
+  assert.match(source,/host\.removeEventListener\('click',onTimeAxisClick,true\)/);
 });
 test('current market anchors use the persisted cycle path and force a complete signal recalculation',()=>{
   const html=read('historical-insight.html'),controller=read('assets/js/historical-insight/historical-insight.js');
