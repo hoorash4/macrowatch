@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v8';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v9';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -102,7 +102,7 @@ function valueAt(rows, date) {
 function relationship({pivots, rows, from, to, benchmarkEnd, expectedDirection, factor, manualRelationship, startingPivot}) {
   const totalDays = days(from, benchmarkEnd);
   if (totalDays <= 0 || !factor || manualRelationship === 'unclear') return {relationship: manualRelationship || 'unclear', score: 0};
-  const coveredFrom = startingPivot?.pivotDate > from ? startingPivot.pivotDate : from;
+  const coveredFrom = startingPivot?.pivotDate || from;
   if (coveredFrom >= to) return {relationship: manualRelationship || 'unclear', score: 0};
   const points = [coveredFrom, ...intermediates(pivots, coveredFrom, to).map(pivot => pivot.pivotDate), to];
   const segments = [];
