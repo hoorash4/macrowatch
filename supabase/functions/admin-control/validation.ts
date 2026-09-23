@@ -1,6 +1,7 @@
 export const ADMIN_CARD_IDS = new Set([
   "member-management", "index-registry", "sector-registry", "news-analysis",
   "decisive-news", "uncertain-news", "policy-review", "automation-schedules",
+  "historical-pivot-reasons",
   "ai-model-settings",
   "earnings-v2-pending", "collection-errors", "integrations-backup",
 ]);
