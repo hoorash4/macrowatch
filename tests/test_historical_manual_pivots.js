@@ -51,6 +51,45 @@ test('an automatic key remains unchanged when no manual key claims its reference
   assert.equal(result[0].markerStatus,'confirmed');
 });
 
+test('an administrator key-off demotes only that pivot and does not promote another candidate',()=>{
+  const result=merge({storedPivots:[auto('2022-01-05',0),auto('2022-01-20',1)],manualPivots:[{
+    sourceDate:'2022-01-05',pivotDate:'2022-01-05',pivotValue:42,relationship:'inverse',
+    reason:'관리자 선택',comment:'',keyReference:null,keySuppressed:true,isDeleted:false
+  }]},{startDate:'2022-01-05'});
+  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-05').markerStatus,'manual_standard');
+  assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-20').markerStatus,'near_miss');
+  const summary=badges({storedPivots:[],manualPivots:[{
+    sourceDate:'2022-01-05',pivotDate:'2022-01-05',pivotValue:42,relationship:'inverse',
+    reason:'관리자 선택',comment:'',keyReference:null,keySuppressed:true,isDeleted:false
+  }]},{mode:'history',cycle:{startDate:'2022-01-05'}});
+  assert.deepEqual(Array.from(summary.anchors),[]);
+  assert.deepEqual(Array.from(summary.nearMisses),['START']);
+});
+
+test('the modal checks an automatically magenta pivot and unchecks an administrator-demoted pivot',()=>{
+  const from=controller.indexOf('  function openManualPivotModal(');
+  const to=controller.indexOf('  async function persistManualPivot(',from);
+  assert.ok(from>=0&&to>from);
+  const fields=Object.fromEntries(['historical-manual-pivot-title','historical-manual-pivot-date',
+    'historical-manual-pivot-relationship','historical-manual-pivot-reason','historical-manual-pivot-comment',
+    'historical-manual-pivot-is-key','historical-manual-pivot-reference',
+    'historical-manual-pivot-delete','historical-manual-pivot-status','historical-manual-pivot-modal']
+    .map(id=>[id,{value:'',checked:false,hidden:true,focus(){}}]));
+  const item={meta:{code:'TEST',title:'테스트 지표'},storedPivots:[auto('2022-01-05',0)],manualPivots:[]};
+  const scope={isAdmin:true,activeMode:'history',functionClient:{},activeIndicatorContext:{analyses:[item]},
+    activeCase:{code:'case'},activeCode:'SP500',$:id=>fields[id],manualPivotContext:null,
+    effectivePivots:()=>[{pivotDate:'2022-01-05',markerStatus:'confirmed',selectedReferences:[{type:'START'}]}]};
+  const open=vm.runInNewContext(`${controller.slice(from,to)}\nopenManualPivotModal`,scope);
+  open({code:'TEST',date:'2022-01-05'});
+  assert.equal(fields['historical-manual-pivot-is-key'].checked,true);
+  assert.equal(fields['historical-manual-pivot-reference'].value,'START');
+  scope.effectivePivots=()=>[{pivotDate:'2022-01-05',markerStatus:'manual_standard',selectedReferences:[]}];
+  item.manualPivots=[{sourceDate:'2022-01-05',pivotDate:'2022-01-05',keyReference:null,keySuppressed:true,isDeleted:false}];
+  open({code:'TEST',date:'2022-01-05'});
+  assert.equal(fields['historical-manual-pivot-is-key'].checked,false);
+  assert.equal(fields['historical-manual-pivot-reference'].value,'');
+});
+
 test('a non-key manual pivot uses the existing date windows for magenta, dark, or light gray',()=>{
   const manual=(date)=>({sourceDate:date,pivotDate:date,pivotValue:42,relationship:'inverse',reason:'관리자 선택',comment:'',keyReference:null,isDeleted:false});
   const result=merge({storedPivots:[],manualPivots:[manual('2022-01-05'),manual('2022-02-15'),manual('2022-03-01')]},{startDate:'2022-01-05'});
@@ -151,4 +190,3 @@ test('delete action remains hover-visible without mouse-focused rows sticking op
   assert.match(css,/\.historical-indicator-row:has\(:focus-visible\) \.historical-indicator-actions/);
   assert.doesNotMatch(css,/\.historical-indicator-row:focus-within \.historical-indicator-actions/);
 });
-
