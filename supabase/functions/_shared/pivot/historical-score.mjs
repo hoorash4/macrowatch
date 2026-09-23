@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v6';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v7';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -169,7 +169,7 @@ export function scoreReferences({pivots, rows, cycle}) {
     ? weights[type] : result[type].pivotDate ? weights[type] / 2 : 0), 0);
   const pivotScore = Object.keys(weights).reduce((total, type) => total + result[type].score, 0);
   const extraDarkTieBreak = darkPivots.reduce((total, pivot) => total + (selected[pivot.referenceType]?.pivotDate === pivot.pivotDate
-    ? 0 : weights[pivot.referenceType] / 2), 0);
+    ? 0 : weights[pivot.referenceType] / 2 + pivot.score), 0);
   const rawScore = placementScore + pivotScore;
   result.LIST = {score: Math.round(rawScore / 800 * 100), rawScore, placementScore, pivotScore,
     extraDarkTieBreak, darkPivots};
