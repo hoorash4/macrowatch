@@ -45,7 +45,7 @@
   function relationshipScore({pivots,fromDate,toDate,benchmarkEndDate=toDate,rows,valueAtDate,expectedDirection,factor,manualRelationship,startingPivot}){
     const totalDays=days(fromDate,benchmarkEndDate);
     if(totalDays<=0||!factor||manualRelationship==='unclear')return {relationship:manualRelationship||'unclear',score:0};
-    const coveredFrom=startingPivot?.pivotDate>fromDate?startingPivot.pivotDate:fromDate;
+    const coveredFrom=startingPivot?.pivotDate||fromDate;
     if(coveredFrom>=toDate)return {relationship:manualRelationship||'unclear',score:0};
     const points=[coveredFrom,...intermediatePivots(pivots,coveredFrom,toDate).map(pivot=>pivot.pivotDate),toDate];
     const segments=[];
