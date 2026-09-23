@@ -46,12 +46,14 @@ test('only the first light-gray intermediate point ends continuity',()=>{
   assert.deepEqual(Array.from(scoring.intermediatePivots(points,'2022-01-01','2022-04-01'),point=>point.pivotDate),['2022-02-15','2022-03-01']);
 });
 
-test('endpoint color factors are per anchor and the trough uses its own starting pivot',()=>{
+test('relationship color factor uses only the starting pivot',()=>{
   const magenta=pivot('2022-01-01'),dark=pivot('2022-01-01','near_miss');
   assert.equal(scoring.endpointFactor(magenta,magenta,'START'),1);
-  assert.equal(scoring.endpointFactor(magenta,dark,'START'),.75);
+  assert.equal(scoring.endpointFactor(magenta,dark,'START'),1);
+  assert.equal(scoring.endpointFactor(magenta,null,'START'),1);
   assert.equal(scoring.endpointFactor(dark,dark,'PEAK'),.5);
-  assert.equal(scoring.endpointFactor(dark,null,'START'),.25);
+  assert.equal(scoring.endpointFactor(dark,null,'START'),.5);
+  assert.equal(scoring.endpointFactor(null,magenta,'START'),0);
   assert.equal(scoring.endpointFactor(null,null,'START'),0);
   assert.equal(scoring.endpointFactor(magenta,null,'TROUGH'),1);
   assert.equal(scoring.endpointFactor(dark,null,'TROUGH'),.5);
@@ -84,6 +86,15 @@ test('a first flat segment gives half its days to the next non-flat direction',(
   assert.equal(result.score,75);
 });
 
+test('a fully flat span gives half credit when its relationship was set manually',()=>{
+  const rows=[{time:'2022-01-01',value:5},{time:'2022-02-01',value:5}];
+  const at=(source,date)=>source.find(row=>row.time===date)?.value;
+  const input={pivots:[],fromDate:'2022-01-01',toDate:'2022-02-01',rows,valueAtDate:at,expectedDirection:1,factor:1};
+  assert.deepEqual({...scoring.relationshipScore({...input,manualRelationship:'inverse'})},{relationship:'inverse',score:50});
+  assert.deepEqual({...scoring.relationshipScore({...input,manualRelationship:'positive'})},{relationship:'positive',score:50});
+  assert.deepEqual({...scoring.relationshipScore(input)},{relationship:'unclear',score:0});
+});
+
 test('composite uses only the approved 4:3:3 weights and floors the result',()=>{
   assert.equal(scoring.compositeScore(100,100,100),100);
   assert.equal(scoring.compositeScore(58,17,67),48);
@@ -92,7 +103,7 @@ test('composite uses only the approved 4:3:3 weights and floors the result',()=>
 
 test('stored scores match the existing front-end formulas for all three references',async()=>{
   const {mergedPivots,scoreReferences,SCORE_VERSION}=await storedScoring;
-  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v2');
+  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v3');
   const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
   const automatic=['2022-01-01','2022-02-01','2022-03-01'].map((date,index)=>({pivot_order:index,pivot_date:date,pivot_value:[0,10,5][index]}));
   const pivots=mergedPivots({automatic,manual:[],cycle,indexCode:'SP500'});
@@ -109,6 +120,26 @@ test('stored scores match the existing front-end formulas for all three referenc
       saved[type].relationshipSuitabilityScore,saved[type].continuityScore));
   }
   assert.deepEqual(pivots.map(point=>point.markerStatus),['confirmed','confirmed','confirmed']);
+});
+
+test('stored relationship scores ignore the end pivot and credit manually classified flat days',async()=>{
+  const {mergedPivots,scoreReferences}=await storedScoring;
+  const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
+  const manual=[
+    {source_date:'2022-01-01',pivot_date:'2022-01-01',pivot_value:5,
+      relationship:'inverse',key_references:{SP500:'START'},is_deleted:false},
+    {source_date:'2022-02-01',pivot_date:'2022-02-01',pivot_value:5,
+      relationship:'inverse',key_references:{SP500:'PEAK'},is_deleted:false}
+  ];
+  const rows=[{observation_date:'2022-01-01',value:5},{observation_date:'2022-02-01',value:5},
+    {observation_date:'2022-03-01',value:10}];
+  const both=scoreReferences({pivots:mergedPivots({manual,cycle,indexCode:'SP500'}),rows,cycle});
+  const onlyStart=scoreReferences({pivots:mergedPivots({manual:manual.slice(0,1),cycle,indexCode:'SP500'}),rows,cycle});
+  const onlyPeak=scoreReferences({pivots:mergedPivots({manual:manual.slice(1),cycle,indexCode:'SP500'}),rows,cycle});
+  assert.equal(both.START.relationshipSuitabilityScore,50);
+  assert.equal(onlyStart.START.relationshipSuitabilityScore,50);
+  assert.equal(onlyPeak.PEAK.relationshipSuitabilityScore,100);
+  assert.equal(onlyPeak.TROUGH.relationshipSuitabilityScore,0);
 });
 
 test('stored score input keeps manual deletion and the surviving manual pivot separate',async()=>{
