@@ -132,7 +132,7 @@ test('composite uses only the approved 4:3:3 weights and floors the result',()=>
 
 test('stored scores match the existing front-end formulas for all three references',async()=>{
   const {mergedPivots,scoreReferences,SCORE_VERSION}=await storedScoring;
-  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v9');
+  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v10');
   const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
   const automatic=['2022-01-01','2022-02-01','2022-03-01'].map((date,index)=>({pivot_order:index,pivot_date:date,pivot_value:[0,10,5][index]}));
   const pivots=mergedPivots({automatic,manual:[],cycle,indexCode:'SP500'});
@@ -153,6 +153,58 @@ test('stored scores match the existing front-end formulas for all three referenc
   assert.equal(saved.LIST.rawScore,500+saved.START.score+saved.PEAK.score+saved.TROUGH.score);
   assert.equal(saved.LIST.score,Math.round(saved.LIST.rawScore/800*100));
   assert.equal(saved.LIST.extraDarkTieBreak,0);
+});
+
+test('a manually inverse START pivot with a rising next segment becomes light gray and earns no own score',async()=>{
+  const {mergedPivots,scoreReferences}=await storedScoring;
+  const cycle={startDate:'2022-01-01',peakDate:'2022-07-01',troughDate:'2023-01-01'};
+  const rows=[{observation_date:'2022-01-01',value:10},{observation_date:'2022-02-01',value:20},
+    {observation_date:'2022-07-01',value:30},{observation_date:'2023-01-01',value:10},
+    {observation_date:'2025-01-01',value:20}];
+  const manual=[{source_date:'2022-01-01',pivot_date:'2022-01-01',pivot_value:10,
+    relationship:'inverse',key_references:{},is_deleted:false}];
+  const automatic=[{pivot_order:0,pivot_date:'2022-02-01',pivot_value:20}];
+  const pivots=mergedPivots({automatic,manual,cycle,indexCode:'SP500',observations:rows});
+  assert.equal(pivots[0].markerStatus,'reference_only');
+  assert.equal(pivots[1].markerStatus,'confirmed');
+  const scores=scoreReferences({pivots,rows,cycle});
+  assert.equal(scores.START.pivotDate,'2022-02-01');
+  assert.equal(scores.LIST.darkPivots.some(pivot=>pivot.pivotDate==='2022-01-01'),false);
+});
+
+test('manual key overrides direction but a wrong-direction light gray pivot remains a trend intermediate',async()=>{
+  const {mergedPivots,scoreReferences}=await storedScoring;
+  const cycle={startDate:'2022-01-01',peakDate:'2022-07-01',troughDate:'2023-01-01'};
+  const rows=[{observation_date:'2022-01-01',value:10},{observation_date:'2022-02-01',value:20},
+    {observation_date:'2022-03-01',value:30},{observation_date:'2022-07-01',value:40},
+    {observation_date:'2023-01-01',value:10},{observation_date:'2025-01-01',value:20}];
+  const manual=[
+    {source_date:'2022-01-01',pivot_date:'2022-01-01',pivot_value:10,
+      relationship:'inverse',key_references:{SP500:'START'},is_deleted:false},
+    {source_date:'2022-02-01',pivot_date:'2022-02-01',pivot_value:20,
+      relationship:'inverse',key_references:{},is_deleted:false}
+  ];
+  const automatic=[{pivot_order:0,pivot_date:'2022-03-01',pivot_value:30}];
+  const pivots=mergedPivots({automatic,manual,cycle,indexCode:'SP500',observations:rows});
+  assert.equal(pivots[0].markerStatus,'confirmed');
+  assert.equal(pivots[1].markerStatus,'reference_only');
+  const scores=scoreReferences({pivots,rows,cycle});
+  assert.equal(scores.START.continuityScore,Math.floor(100*31/181));
+  assert.equal(scores.LIST.darkPivots.some(pivot=>pivot.pivotDate==='2022-02-01'),false);
+});
+
+test('a saved positive PEAK follows the falling index segment, while an inverse PEAK needs a rising one',async()=>{
+  const {mergedPivots}=await storedScoring;
+  const cycle={startDate:'2022-01-01',peakDate:'2022-07-01',troughDate:'2023-01-01'};
+  const observations=[{observation_date:'2022-07-01',value:30},{observation_date:'2022-08-01',value:20},
+    {observation_date:'2023-01-01',value:10},{observation_date:'2025-01-01',value:20}];
+  const manual=relationship=>[{source_date:'2022-07-01',pivot_date:'2022-07-01',pivot_value:30,
+    relationship,key_references:{},is_deleted:false}];
+  const automatic=[{pivot_order:0,pivot_date:'2022-08-01',pivot_value:20}];
+  const classify=relationship=>mergedPivots({automatic,manual:manual(relationship),cycle,indexCode:'SP500',observations});
+  assert.equal(classify('positive')[0].markerStatus,'confirmed');
+  assert.equal(classify('inverse')[0].markerStatus,'reference_only');
+  assert.equal(classify('inverse')[1].markerStatus,'confirmed');
 });
 
 test('extra dark-gray pivots are stored for display and break ties without inflating the displayed score',async()=>{
