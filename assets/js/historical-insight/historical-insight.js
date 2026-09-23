@@ -119,7 +119,13 @@
   function focusCase(){if(!chart||!activeRows.length||!activeCase)return;const cycle=cycleData.marketCycle(activeCase,activeCode);const from=cycle.startDate||activeCase.searchStart;const to=cycle.troughDate || cycle.peakDate || activeRows.at(-1).time;chart.focus(from,to,.12);}
   function indicatorLoading(text='비교 지표 분석 중'){const root=$('historical-indicator-list');if(root){root.replaceChildren();const p=document.createElement('p');p.className='historical-indicator-empty';p.textContent=text;root.append(p);}}
   async function mapSeries(metadata,worker){const out=[];for(let i=0;i<metadata.length;i+=6){const batch=await Promise.all(metadata.slice(i,i+6).map(worker));out.push(...batch.filter(Boolean));}return out;}
-  async function calculateIndicatorContext(){const key=`${activeMode}:${activeCase.code}:${activeCode}`;if(analysisCache.has(key))return analysisCache.get(key);const coverage=await indicatorRepository.loadCoverage(),catalog=indicatorRepository.catalog(activeCode).filter(item=>!hiddenIndicatorCodes.has(item.code)),cycle=cycleData.marketCycle(activeCase,activeCode),end=indicatorAnalysis.analysisEnd(activeCase,cycle),latest=activeRows.at(-1)?.time||end,displayRange=indicatorAnalysis.displayWindow(activeCase,cycle,latest);if(activeMode==='history'){const eligible=catalog.filter(item=>{const c=coverage.get(item.code);return c&&c.firstDate<=activeCase.searchStart&&c.lastDate>=end;}),loadFrom=displayRange.from<activeCase.searchStart?displayRange.from:activeCase.searchStart,loadTo=displayRange.to>end?displayRange.to:end,analyses=await mapSeries(eligible,async item=>{const rows=await indicatorRepository.load(item.code,loadFrom,loadTo),analysis=indicatorAnalysis.analyzeHistorical(item,rows,activeCase,cycle,activeRows),[storedPivots,manualPivots]=await Promise.all([indicatorRepository.loadStoredPivots(activeCase.code,activeCase.primaryIndex,item.code),indicatorRepository.loadManualPivots(activeCase.code,activeCode,item.code)]);return Object.freeze({...analysis,storedPivots,manualPivots});}),value=Object.freeze({mode:'history',analyses,end,displayRange,cycle});analysisCache.set(key,value);return value;}const usable=catalog.filter(item=>coverage.has(item.code)),historyStart=activeCase.searchStart,marketRows=activeRows,rawAnalyses=await mapSeries(usable,async item=>{const rows=await indicatorRepository.load(item.code,historyStart,latest);return indicatorAnalysis.analyzeCurrent(item,rows,historyStart,latest,{item:activeCase,cycle,marketRows});}),analyses=indicatorAnalysis.applyCurrentSynergy(rawAnalyses),value=Object.freeze({mode:'current',analyses,end:latest,displayRange});analysisCache.set(key,value);return value;}
+  async function rebuildHistoricalScores(caseCode,indexCode,seriesCodes){
+    for(let i=0;i<seriesCodes.length;i+=6)await functionClient.invoke('historical-score-rebuild',{
+      case_code:caseCode,index_code:indexCode,series_codes:seriesCodes.slice(i,i+6)
+    });
+    indicatorRepository.clearScoreRows(caseCode,indexCode);
+  }
+  async function calculateIndicatorContext(){const key=`${activeMode}:${activeCase.code}:${activeCode}`;if(analysisCache.has(key))return analysisCache.get(key);const coverage=await indicatorRepository.loadCoverage(),catalog=indicatorRepository.catalog(activeCode).filter(item=>!hiddenIndicatorCodes.has(item.code)),cycle=cycleData.marketCycle(activeCase,activeCode),end=indicatorAnalysis.analysisEnd(activeCase,cycle),latest=activeRows.at(-1)?.time||end,displayRange=indicatorAnalysis.displayWindow(activeCase,cycle,latest);if(activeMode==='history'){const eligible=catalog.filter(item=>{const c=coverage.get(item.code);return c&&c.firstDate<=activeCase.searchStart&&c.lastDate>=end;}),loadFrom=displayRange.from<activeCase.searchStart?displayRange.from:activeCase.searchStart,loadTo=displayRange.to>end?displayRange.to:end;let scores=await indicatorRepository.loadScoreRows(activeCase.code,activeCode);const stale=eligible.filter(item=>scores.get(item.code)?.scoring_version!==indicatorData.SCORE_VERSION).map(item=>item.code);if(stale.length&&isAdmin){await rebuildHistoricalScores(activeCase.code,activeCode,stale);scores=await indicatorRepository.loadScoreRows(activeCase.code,activeCode);}const analyses=await mapSeries(eligible,async item=>{const rows=await indicatorRepository.load(item.code,loadFrom,loadTo),analysis=indicatorData.aiAnalysis(scores.get(item.code),item,rows),[storedPivots,manualPivots]=await Promise.all([indicatorRepository.loadStoredPivots(activeCase.code,activeCase.pivotSourceIndex,item.code),indicatorRepository.loadManualPivots(activeCase.code,activeCode,item.code)]);return Object.freeze({...analysis,storedPivots,manualPivots});}),value=Object.freeze({mode:'history',analyses,end,displayRange,cycle});analysisCache.set(key,value);return value;}const usable=catalog.filter(item=>coverage.has(item.code)),historyStart=activeCase.searchStart,marketRows=activeRows,rawAnalyses=await mapSeries(usable,async item=>{const rows=await indicatorRepository.load(item.code,historyStart,latest);return indicatorAnalysis.analyzeCurrent(item,rows,historyStart,latest,{item:activeCase,cycle,marketRows});}),analyses=indicatorAnalysis.applyCurrentSynergy(rawAnalyses),value=Object.freeze({mode:'current',analyses,end:latest,displayRange});analysisCache.set(key,value);return value;}
   function candidatesFor(context){if(context.mode==='history')return{items:context.analyses.filter(item=>item.storedPivots?.length||item.manualPivots?.some(pivot=>!pivot.isDeleted)||item.visible),signal:null};const rank={market_relevant_confirmed:0,structural_only:1,candidate:2,watch:3,watching:4},items=[...context.analyses].sort((a,b)=>(rank[a.evidence?.signalState]??5)-(rank[b.evidence?.signalState]??5)||b.evidence.score-a.evidence.score||a.meta.title.localeCompare(b.meta.title,'ko'));return{items,signal:indicatorAnalysis.currentPivotProbability(items)};}
   function classifyStoredPivots(pivots,cycle){
     const refs=[['START',cycle?.startDate],['PEAK',cycle?.peakDate],['TROUGH',cycle?.troughDate]].filter(([,date])=>date);
@@ -226,7 +232,10 @@
         comment:isDeleted?null:$('historical-manual-pivot-comment').value,key_reference:isDeleted?null:keyReference
       });
       indicatorRepository.clearManualPivots(context.caseCode,context.indexCode,context.seriesCode);
+      for(const code of Object.keys(indexData.indices))indicatorRepository.clearScoreRows(context.caseCode,code);
       for(const code of Object.keys(indexData.indices))analysisCache.delete(`history:${context.caseCode}:${code}`);
+      try{for(const code of Object.keys(indexData.indices))await rebuildHistoricalScores(context.caseCode,code,[context.seriesCode]);}
+      catch(error){status.textContent=`변곡점은 저장됐지만 점수 갱신 실패: ${error?.message||'알 수 없는 오류'}`;return;}
       closeManualPivotModal();
       if(activeCase?.code===context.caseCode&&activeCode===context.indexCode&&activeMode==='history')await refreshIndicators(requestToken);
     }catch(error){status.textContent=`저장 오류: ${error?.message||'알 수 없는 오류'}`;}
@@ -259,7 +268,8 @@
     if(!isAdmin||!functionClient)return;button.disabled=true;status.textContent='저장 중';
     try{
       await functionClient.invoke('admin-control',{action:'resolve_historical_pivot_review',case_code:activeCase.code,index_code:activeCode,series_code:item.meta.code,pivot_date:pivot.date,resolution});
-      window.MacroWatchHistoricalIndicators?.clearAiScores?.();analysisCache.clear();closePivotReviewModal();await render(activeCode);
+      await rebuildHistoricalScores(activeCase.code,activeCode,[item.meta.code]);
+      indicatorRepository.clearScoreRows(activeCase.code,activeCode);analysisCache.clear();closePivotReviewModal();await render(activeCode);
     }catch(error){status.textContent='저장 오류: '+(error?.message||'알 수 없는 오류');button.disabled=false;}
   }
   function openPivotReviewModal(item,pivot){
@@ -365,8 +375,6 @@
   function renderHistoricalPivotScores(item,context){
     const root=$('historical-indicator-detail');
     if(!item){root.hidden=true;root.replaceChildren();return;}
-    const scoring=window.MacroWatchHistoricalPivotScoring;
-    if(!scoring)throw new Error('과거 피봇 점수 모듈을 불러오지 못했습니다.');
     root.hidden=false;root.replaceChildren();
     const heading=document.createElement('div'),title=document.createElement('strong'),metaLine=document.createElement('span'),grid=document.createElement('div');
     heading.className='historical-indicator-detail-heading';title.textContent=item.meta.title;
@@ -374,40 +382,19 @@
     heading.append(title,metaLine);root.append(heading);
     grid.className='historical-indicator-result-grid historical-pivot-detail-grid';
     const dates={START:context.cycle.startDate,PEAK:context.cycle.peakDate,TROUGH:context.cycle.troughDate};
-    const hasStored=Boolean(item.storedPivots?.length||item.manualPivots?.length);
-    const pivots=hasStored?item.displayPivots||[]:(item.displayPivots||[]).map(pivot=>{
-      const references=(item.results||[]).filter(result=>result.pivotDate===pivot.pivotDate).map(result=>({type:result.referenceType}));
-      return {...pivot,markerStatus:pivot.markerStatus|| (references.length?'confirmed':'reference_only'),selectedReferences:pivot.selectedReferences||references};
-    }),bufferEnd=scoring.shiftMonths(dates.TROUGH,24);
-    const selected=Object.fromEntries(referenceOrder.map(type=>[type,scoring.referencePivot(pivots,type,dates[type])]));
     referenceOrder.forEach(type=>{
-      const card=document.createElement('article'),label=document.createElement('strong'),body=document.createElement('p'),pivot=selected[type],fromDate=dates[type];
-      const benchmarkEnd=type==='START'?dates.PEAK:type==='PEAK'?dates.TROUGH:bufferEnd;
-      const next=type==='TROUGH'?scoring.firstIntermediate(pivots,fromDate,bufferEnd):null;
-      const toDate=next?.pivotDate||benchmarkEnd;
-      const endPivot=type==='START'?selected.PEAK:type==='PEAK'?selected.TROUGH:null;
-      const factor=scoring.endpointFactor(pivot,endPivot,type);
-      const relation=pivot?scoring.relationshipScore({pivots,fromDate,toDate,benchmarkEndDate:benchmarkEnd,rows:item.rows,valueAtDate:rawValueAtDate,expectedDirection:type==='PEAK'?-1:1,factor,manualRelationship:pivot.isManual?pivot.relationship:null}):{relationship:'unclear',score:0};
-      const continuityStart=type==='TROUGH'?fromDate:pivot?.pivotDate;
-      const intermediate=pivot?scoring.firstIntermediate(pivots,continuityStart,benchmarkEnd):null;
-      const timeliness=scoring.timelinessScore(fromDate,pivot);
-      const continuity=scoring.continuityScore(pivot,intermediate,benchmarkEnd,scoring.days(fromDate,benchmarkEnd),continuityStart);
-      const composite=scoring.compositeScore(timeliness,relation.score,continuity);
-      const offset=pivot?scoring.days(fromDate,pivot.pivotDate):null;
-      card.classList.toggle('is-empty',!pivot);
-      label.textContent=`${type} · ${pivot?(offset===0?'기준점 당일':`기준점 ${Math.abs(offset)}일 ${offset<0?'전':'후'}`):'기준점 피봇 없음'} · ${relationshipLabel(relation.relationship)} · 종합 점수 ${composite}점`;
-      body.textContent=pivot?`기준점 ${fromDate}\n피봇점 ${pivot.pivotDate} · 수치 ${indicatorValue(pivot,item.meta)}\n변곡 시의성 ${timeliness}점 · 관계 적합성 ${relation.score}점 · 추세 지속성 ${continuity}점`
-        :`기준점 ${fromDate}\n변곡 시의성 0점 · 관계 적합성 0점 · 추세 지속성 0점`;
+      const card=document.createElement('article'),label=document.createElement('strong'),body=document.createElement('p');
+      const score=item.byReference?.[type],hasPivot=Boolean(score?.pivotDate),offset=score?.offsetDays;
+      card.classList.toggle('is-empty',!hasPivot);
+      label.textContent=`${type} · ${hasPivot?(offset===0?'기준점 당일':`기준점 ${Math.abs(offset)}일 ${offset<0?'전':'후'}`):'기준점 피봇 없음'} · ${relationshipLabel(score?.relationship||'unclear')} · 종합 점수 ${score?.score??0}점`;
+      body.textContent=hasPivot?`기준점 ${dates[type]}\n피봇점 ${score.pivotDate} · 수치 ${indicatorValue(score,item.meta)}\n변곡 시의성 ${score.timelinessScore}점 · 관계 적합성 ${score.relationshipSuitabilityScore}점 · 추세 지속성 ${score.continuityScore}점`
+        :`기준점 ${dates[type]}\n변곡 시의성 ${score?.timelinessScore??0}점 · 관계 적합성 ${score?.relationshipSuitabilityScore??0}점 · 추세 지속성 ${score?.continuityScore??0}점`;
       card.append(label,body);
-      if(pivot){
-        const box=document.createElement('div'),reasonLabel=document.createElement('b'),reasonText=document.createElement('p');
-        box.className='historical-pivot-reason';reasonLabel.textContent='피봇 판정 근거';reasonText.textContent=pivotReasonFor(item,pivot)||'근거 미저장';
-        box.append(reasonLabel,reasonText);card.append(box);
-      }
+      if(hasPivot){const box=document.createElement('div'),reasonLabel=document.createElement('b'),reasonText=document.createElement('p');box.className='historical-pivot-reason';reasonLabel.textContent='피봇 판정 근거';reasonText.textContent=score.pivotReason||'근거 미저장';box.append(reasonLabel,reasonText);card.append(box);}
       grid.append(card);
     });
     root.append(grid);
-    if(!hasStored)appendDReviews(root,item);
+    if(!item.storedPivots?.length&&!item.manualPivots?.length)appendDReviews(root,item);
   }
   function clearIndicatorSelection(){if(!selection)return;selection.clear();document.querySelectorAll('input[name="historical-indicator"]').forEach(input=>{input.checked=false;});if(activeIndicatorContext)drawIndicators(activeIndicatorContext);}
   function renderDetail(item){const root=$('historical-indicator-detail');if(!item){root.hidden=true;root.replaceChildren();return;}root.hidden=false;root.replaceChildren();const heading=document.createElement('div');heading.className='historical-indicator-detail-heading';const title=document.createElement('strong'),metaLine=document.createElement('span');title.textContent=item.meta.title;metaLine.textContent=`${item.meta.category} · ${item.meta.frequencyLabel} · ${item.meta.unit} · 관측일 원자료 기준`;heading.append(title,metaLine);root.append(heading);const evidence=item.evidence||{},grid=document.createElement('div'),card=document.createElement('article'),label=document.createElement('strong'),body=document.createElement('p'),synergy=evidence.synergyGroup?.length?` · 시너지 +${evidence.synergyBonus}점 (${evidence.synergyGroup.map(peer=>peer.title).join(', ')})`:'';grid.className='historical-indicator-result-grid is-current';if(evidence.signalState==='market_relevant_confirmed'){const pivot=evidence.pivot||[...(item.confirmedReferences||[])].sort((a,b)=>b.score-a.score)[0],extreme=evidence.activeTrend;label.textContent='MARKET RELEVANT · 시장 기준점 관련 확정';body.textContent=`구조 경계 ${pivot.pivotDate} · 확인 ${pivot.confirmationDate}\n${regimeLabel(pivot.previousRegime)} → ${regimeLabel(pivot.nextRegime)} · 현재 극값 ${extreme.currentExtremeDate}\n기본 ${Math.round(evidence.baseScore)}점 · 현재 ${Math.round(evidence.score)}점`;}else if(evidence.status==='structural_only'){const pivot=evidence.pivot,extreme=evidence.activeTrend;label.textContent='STRUCTURAL ONLY · 구조 신호 유지';body.textContent=`구조 경계 ${pivot.pivotDate} · 확인 ${pivot.confirmationDate}\n${regimeLabel(pivot.previousRegime)} → ${regimeLabel(pivot.nextRegime)} · 현재 극값 ${extreme.currentExtremeDate}\n구조 품질 ${Math.round(evidence.signalQuality)}점 · 최신 구조 ${Math.round(evidence.provisionalBaseScore??evidence.baseScore)}점${synergy}${evidence.confirmedBaseScore?` · 시장 확정 ${Math.round(evidence.confirmedBaseScore)}점`:``} · 현재 ${Math.round(evidence.score)}점`;}else if(evidence.pending){const pending=evidence.pending;label.textContent=evidence.status==='candidate'?'CANDIDATE · 구조 피봇 후보':'WATCH · 조정 감시';body.textContent=`후보 경계 ${pending.candidateDate} · 감시 ${pending.monitoringDays}일\n현재 극값 ${pending.currentExtremeDate} · ${window.MacroWatchFrontend.formatDisplayNumber(pending.currentExtremeValue,{maximumFractionDigits:item.meta.decimals})} ${item.meta.unit}\n구조 품질 ${Math.round(pending.structuralQuality||0)}점 · 최신 후보 ${Math.round(evidence.provisionalBaseScore??evidence.baseScore)}점${synergy}${evidence.confirmedBaseScore?` · 시장 확정 ${Math.round(evidence.confirmedBaseScore)}점`:``} · 현재 ${Math.round(evidence.score)}점\n무효화 조건 ${pending.invalidationCondition}`;}else{card.classList.add('is-empty');label.textContent='WATCHING · 신호 없음';body.textContent='현재 확인 중인 추세 경계가 없습니다.';}card.append(label,body);grid.append(card);root.append(grid);const confirmed=anchorSummary(item);if(confirmed.length){const note=document.createElement('p');note.className='historical-indicator-note';note.textContent=`시장 기준점 관련 확정: ${confirmed.join(' · ')} · 각 기준점 -3개월~+1개월 안의 구조 피봇만 반영`;root.append(note);}if(evidence.invalidations?.length){const latestInvalidation=evidence.invalidations.at(-1),note=document.createElement('p');note.className='historical-indicator-note';note.textContent=`최근 무효화/교체: ${latestInvalidation.invalidationDate} · ${latestInvalidation.reason}`;root.append(note);}return;}
