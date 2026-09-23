@@ -251,14 +251,14 @@ export default {
         }
         const pivotDate = isDeleted ? null : historicalDate(body?.pivot_date);
         const pivotValue = isDeleted ? null : Number(body?.pivot_value);
-        const relationship = isDeleted ? null : String(body?.relationship || "");
-        const reason = isDeleted ? null : String(body?.reason || "").trim();
+        const relationship = isDeleted ? null : String(body?.relationship || "").trim() || null;
+        const reason = isDeleted ? null : String(body?.reason || "").trim() || null;
         const comment = isDeleted ? null : String(body?.comment || "").trim();
         const keyReference = isDeleted || body?.key_reference == null || body.key_reference === ""
           ? null : String(body.key_reference);
         if (!isDeleted && (!pivotDate || !Number.isFinite(pivotValue)
-          || !["positive", "inverse", "unclear"].includes(relationship)
-          || !reason || reason.length > 250 || (comment?.length || 0) > 1000
+          || (relationship !== null && !["positive", "inverse", "unclear"].includes(relationship))
+          || (reason?.length || 0) > 250 || (comment?.length || 0) > 1000
           || (keyReference !== null && !["START", "PEAK", "TROUGH"].includes(keyReference)))) {
           return json({ error: "피봇 입력값을 확인해 주세요." }, 400, origin);
         }
@@ -923,5 +923,4 @@ export default {
     }
   },
 };
-
 
