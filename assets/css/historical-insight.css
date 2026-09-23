@@ -15,6 +15,7 @@ html[data-theme="dark"] .historical-insight-page { --historical-chart-line: #d1a
 
 /* Historical Case: 관찰 범위와 확정 기준점 */
 .historical-workspace { display: flex; flex-direction: column; }
+.historical-workspace:has(> .historical-cycle-panel:not([hidden]))::after { content: ''; flex: 0 0 24px; border-top: 1px solid var(--theme-border); background: var(--theme-surface-elevated); }
 .historical-chart-region { flex: 1 0 510px; }
 .historical-case-loading { padding: 9px 10px; color: var(--theme-text-muted); font-size: 11px; }
 .historical-case { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
