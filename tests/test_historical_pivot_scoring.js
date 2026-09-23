@@ -115,6 +115,15 @@ test('a late starting pivot earns credit only after its date over the full bench
   assert.equal(scoring.relationshipScore({...input,startingPivot:pivot('2022-01-03')}).score,100);
 });
 
+test('a leading pivot starts indicator trend before the index reference date',()=>{
+  const rows=[{time:'2021-12-01',value:0},{time:'2022-01-01',value:10},{time:'2022-02-01',value:10}];
+  const at=(source,date)=>source.find(row=>row.time===date)?.value;
+  const input={pivots:[],fromDate:'2022-01-01',toDate:'2022-02-01',rows,valueAtDate:at,
+    expectedDirection:1,factor:1,startingPivot:pivot('2021-12-01')};
+  assert.deepEqual({...scoring.relationshipScore(input)},{relationship:'positive',score:100});
+  assert.equal(scoring.relationshipScore({...input,startingPivot:null}).score,0);
+});
+
 test('composite uses only the approved 4:3:3 weights and floors the result',()=>{
   assert.equal(scoring.compositeScore(100,100,100),100);
   assert.equal(scoring.compositeScore(58,17,67),48);
@@ -123,7 +132,7 @@ test('composite uses only the approved 4:3:3 weights and floors the result',()=>
 
 test('stored scores match the existing front-end formulas for all three references',async()=>{
   const {mergedPivots,scoreReferences,SCORE_VERSION}=await storedScoring;
-  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v8');
+  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v9');
   const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
   const automatic=['2022-01-01','2022-02-01','2022-03-01'].map((date,index)=>({pivot_order:index,pivot_date:date,pivot_value:[0,10,5][index]}));
   const pivots=mergedPivots({automatic,manual:[],cycle,indexCode:'SP500'});
@@ -210,6 +219,19 @@ test('stored policy-rate PEAK excludes the 24 days before its pivot',async()=>{
   assert.equal(scoreAt('2022-01-27').continuityScore,100);
   assert.equal(scoreAt('2022-01-03').relationshipSuitabilityScore,100);
   assert.equal(scoreAt('2022-01-03').continuityScore,100);
+});
+
+test('stored relationship includes a leading pivot while the index benchmark starts at its reference',async()=>{
+  const {mergedPivots,scoreReferences}=await storedScoring;
+  const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
+  const rows=[{observation_date:'2021-12-01',value:0},{observation_date:'2022-01-01',value:10},
+    {observation_date:'2022-02-01',value:10}];
+  const manual=[{source_date:'2021-12-01',pivot_date:'2021-12-01',pivot_value:0,
+    relationship:null,key_references:{SP500:'START'},is_deleted:false}];
+  const pivots=mergedPivots({manual,cycle,indexCode:'SP500'});
+  const score=scoreReferences({pivots,rows,cycle}).START;
+  assert.equal(score.relationship,'positive');
+  assert.equal(score.relationshipSuitabilityScore,100);
 });
 
 test('stored score input keeps manual deletion and the surviving manual pivot separate',async()=>{
