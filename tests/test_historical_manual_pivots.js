@@ -5,12 +5,13 @@ const assert=require('node:assert/strict');
 const test=require('node:test');
 
 const controller=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-insight.js'),'utf8');
-const start=controller.indexOf('  function classifyStoredPivots(');
+const start=controller.indexOf('  function manualPivotDirectionMatches(');
 const end=controller.indexOf('  function rawValueAtDate(',start);
+const rawEnd=controller.indexOf('  function closeManualPivotModal(',end);
 const badgeStart=controller.indexOf('  const anchorSummary=');
 const badgeEnd=controller.indexOf('  const pivotReasonFor=',badgeStart);
 assert.ok(start>=0&&end>start&&badgeStart>end&&badgeEnd>badgeStart);
-const {mergeManualPivots:merge,indicatorBadgeSummary:badges}=vm.runInNewContext(`${controller.slice(start,end)}\n${controller.slice(badgeStart,badgeEnd)}\n({mergeManualPivots,indicatorBadgeSummary})`,{
+const {mergeManualPivots:merge,indicatorBadgeSummary:badges}=vm.runInNewContext(`${controller.slice(start,rawEnd)}\n${controller.slice(badgeStart,badgeEnd)}\n({mergeManualPivots,indicatorBadgeSummary})`,{
   referenceOrder:['START','PEAK','TROUGH'],
   indicatorAnalysis:{
     relevanceWindow:date=>date==='2022-11-19'?{from:'2022-08-19',to:'2022-12-19'}:{from:'2022-01-01',to:'2022-01-31'},
@@ -49,6 +50,21 @@ test('manual key stays magenta and the displaced automatic key becomes gray',()=
 test('an automatic key remains unchanged when no manual key claims its reference',()=>{
   const result=merge({storedPivots:[auto('2022-01-05',0)],manualPivots:[]},{startDate:'2022-01-05'});
   assert.equal(result[0].markerStatus,'confirmed');
+});
+
+test('a saved inverse START only demotes that manual pivot when its next segment rises',()=>{
+  const cycle={startDate:'2022-01-01',peakDate:'2022-07-01',troughDate:'2023-01-01'};
+  const rows=[{time:'2022-01-01',value:10},{time:'2022-01-20',value:20},
+    {time:'2022-07-01',value:30},{time:'2023-01-01',value:10}];
+  const item={rows,storedPivots:[{pivotDate:'2022-01-20',pivotOrder:0,pivotValue:20}],manualPivots:[{
+    sourceDate:'2022-01-01',pivotDate:'2022-01-01',pivotValue:10,relationship:'inverse',
+    reason:'',comment:'',keyReference:null,isDeleted:false
+  }]};
+  const result=merge(item,cycle);
+  assert.equal(result.find(pivot=>pivot.isManual).markerStatus,'reference_only');
+  assert.equal(result.find(pivot=>!pivot.isManual).markerStatus,'confirmed');
+  item.manualPivots[0].keyReference='START';
+  assert.equal(merge(item,cycle).find(pivot=>pivot.isManual).markerStatus,'confirmed');
 });
 
 test('an administrator key-off demotes only that pivot and does not promote another candidate',()=>{
