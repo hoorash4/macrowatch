@@ -426,13 +426,14 @@ test('UI uses one radio-selected magenta indicator without dimming other series'
   assert.doesNotMatch(html,/historical-indicator-count|historical-indicator-selection-message|<details id="historical-indicator-accordion"/);assert.match(html,/id="historical-indicator-clear"/);assert.match(controller,/input\.type='radio'/);assert.match(controller,/input\.name='historical-indicator'/);assert.match(controller,/selection\.clear\(\).*input\[name="historical-indicator"\]/);assert.match(css,/grid-template-columns: 16px minmax\(0,1fr\) auto/);assert.match(css,/accent-color: var\(--historical-indicator-color\)/);assert.match(css,/\.historical-indicator-score \{[^}]*justify-self:end/);assert.match(css,/historical-reference-badge\[data-reference="START"\]/);assert.match(css,/historical-reference-badge\[data-reference="PEAK"\]/);assert.match(css,/historical-reference-badge\[data-reference="TROUGH"\]/);
   assert.match(controller,/selection\.select\(item\.meta\.code\);drawIndicators\(context\);focusCase\(\)/);
   assert.match(chart,/leftPriceScale: \{ visible: true/);assert.match(chart,/const indicatorColor='#c026d3'/);assert.doesNotMatch(chart,/rgba\(color|onIndicatorActivate/);assert.match(chart,/subscribeClick\(onChartClick\)/);assert.doesNotMatch(controller,/최대 5개|snapshot\.active|snapshot\.checked/);
-  assert.match(css,/\.historical-indicator-result-grid strong \{[^}]*font-size: 14px/);assert.match(css,/\.historical-indicator-result-grid p \{[^}]*font-size: 13px/);assert.match(controller,/card\.classList\.toggle\('is-empty',!result\)/);
-  for(const text of ['종합 점수','피봇 유효성','피봇 타이밍','추세 지속성','관계 신뢰도','관계 보너스'])assert.ok(controller.includes(text));
-  assert.match(controller,/기준점 \$\{result\.referenceDate\}/);assert.match(controller,/피봇점 \$\{result\.pivotDate\}/);
+  assert.match(css,/\.historical-indicator-result-grid strong \{[^}]*font-size: 14px/);assert.match(css,/\.historical-indicator-result-grid p \{[^}]*font-size: 13px/);assert.match(controller,/card\.classList\.toggle\('is-empty',!pivot\)/);
+  for(const text of ['종합 점수','변곡 시의성','관계 적합성','추세 지속성'])assert.ok(controller.includes(text));
+  for(const text of ['피봇 유효성','피봇 타이밍','관계 신뢰도','관계 보너스','확정일'])assert.ok(!controller.includes(text));
+  assert.match(controller,/기준점 \$\{fromDate\}/);assert.match(controller,/피봇점 \$\{pivot\.pivotDate\}/);
   assert.match(controller,/unclear:'정\/역 관계 불명확'/);assert.match(controller,/positive:'정 관계'/);assert.match(controller,/inverse:'역 관계'/);
   assert.doesNotMatch(controller,/피봇 확인 \$\{result\.confirmationDate\}|관계 \$\{result\.relationship\}.*최종/);
   assert.match(controller,/CANDIDATE · 구조 피봇 후보/);assert.match(controller,/WATCH · 조정 감시/);assert.match(controller,/구조 품질/);assert.match(controller,/MARKET RELEVANT · 시장 기준점 관련 확정/);assert.match(chart,/item\.displayPivots\|\|item\.results/);
-  assert.match(controller,/item\.nearMissPivots/);assert.match(controller,/analysis\.meaningfulReferenceCount>0/);
+  assert.match(controller,/item\.nearMissPivots/);assert.match(controller,/rawAnalyses=await mapSeries\(usable/);assert.doesNotMatch(controller,/analysis\.meaningfulReferenceCount>0/);
   assert.match(chart,/'near_miss','overridden_key','manual_standard'/);assert.match(chart,/--historical-near-miss-color/);assert.match(css,/\.historical-reference-badge\.is-near-miss/);
   assert.doesNotMatch(controller,/leading|coincident|lagging|trendConsistency|FILTER_THRESHOLDS/);
 });
@@ -444,3 +445,4 @@ test('coverage view remains canonical, security-invoker, and read-only',()=>{
 test('current regime title setting remains administrator-update only',()=>{
   const sql=read('supabase/migrations/20260915151000_add_historical_current_settings.sql');assert.match(sql,/current_name text not null default '현재 국면 관찰 중'/);assert.match(sql,/Administrators update historical current settings/);assert.doesNotMatch(sql,/grant insert[^;]*authenticated/);
 });
+
