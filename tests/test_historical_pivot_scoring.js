@@ -113,4 +113,9 @@ test('historical detail cards display three independent scores without changing 
     assert.match(card.label.textContent,/positive/);
   }
   assert.equal(JSON.stringify(points),snapshot);
+  render({storedPivots:points,displayPivots:[points[0],points[2]],rows:[
+    {time:'2022-01-01',value:0},{time:'2022-02-01',value:10},{time:'2022-03-01',value:5},{time:'2024-03-01',value:15}
+  ],meta:{}},{mode:'history',cycle:{startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'}});
+  assert.match(cards[1].label.textContent,/기준점 피봇 없음 · unclear/);
+  assert.match(cards[1].body.textContent,/관계 적합성 0점/);
 });
