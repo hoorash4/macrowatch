@@ -143,21 +143,41 @@
     }
     panel.hidden=!list.children.length;
   }
-  function classifyStoredPivots(pivots,cycle){
+  function manualPivotDirectionMatches(pivot,type,pivots,rows,cycle){
+    if(!pivot.isManual||!['positive','inverse'].includes(pivot.relationship)||pivot.keyReference)return true;
+    if(!rows?.length)return true;
+    const dayDistance=(a,b)=>Math.abs(Date.parse(`${a}T00:00:00Z`)-Date.parse(`${b}T00:00:00Z`));
+    const owner=[['START',cycle.startDate],['PEAK',cycle.peakDate],['TROUGH',cycle.troughDate]]
+      .filter(([,date])=>date).sort((a,b)=>dayDistance(a[1],pivot.pivotDate)-dayDistance(b[1],pivot.pivotDate))[0]?.[0]||type;
+    const trough=cycle.troughDate,bufferEnd=trough?new Date(`${trough}T00:00:00Z`):null;
+    if(bufferEnd){bufferEnd.setUTCDate(1);bufferEnd.setUTCMonth(bufferEnd.getUTCMonth()+24);bufferEnd.setUTCDate(Math.min(Number(trough.slice(8,10)),new Date(Date.UTC(bufferEnd.getUTCFullYear(),bufferEnd.getUTCMonth()+1,0)).getUTCDate()));}
+    const end=owner==='START'?cycle.peakDate:owner==='PEAK'?cycle.troughDate:bufferEnd?.toISOString().slice(0,10);
+    const next=pivots.find(candidate=>candidate.pivotDate>pivot.pivotDate),to=next?.pivotDate||end;
+    if(!to||to<=pivot.pivotDate)return false;
+    const fromValue=rawValueAtDate(rows,pivot.pivotDate),toValue=rawValueAtDate(rows,to);
+    if(!Number.isFinite(fromValue)||!Number.isFinite(toValue))return false;
+    const direction=Math.sign(toValue-fromValue);
+    if(!direction)return true;
+    const expected=owner==='PEAK'?-1:1;
+    return direction===(pivot.relationship==='positive'?expected:-expected);
+  }
+  function classifyStoredPivots(pivots,cycle,rows=[]){
     const refs=[['START',cycle?.startDate],['PEAK',cycle?.peakDate],['TROUGH',cycle?.troughDate]].filter(([,date])=>date);
     const days=(a,b)=>Math.round((Date.parse(`${a}T00:00:00Z`)-Date.parse(`${b}T00:00:00Z`))/86400000);
     const source=[...(pivots||[])];
     const selectedByReference=new Map();
     for(const [type,date] of refs){
       const window=indicatorAnalysis.relevanceWindow(date);
-      const candidates=source.filter(pivot=>pivot.pivotDate>=window.from&&pivot.pivotDate<=window.to)
+      const candidates=source.filter(pivot=>pivot.pivotDate>=window.from&&pivot.pivotDate<=window.to
+        &&manualPivotDirectionMatches(pivot,type,source,rows,cycle))
         .sort((a,b)=>Number(Boolean(b.isManual))-Number(Boolean(a.isManual))||Math.abs(days(a.pivotDate,date))-Math.abs(days(b.pivotDate,date))||a.pivotDate.localeCompare(b.pivotDate)||a.pivotOrder-b.pivotOrder);
       if(candidates.length)selectedByReference.set(type,candidates[0]);
     }
     return source.map(pivot=>{
       const selectedRefs=refs.filter(([type])=>selectedByReference.get(type)===pivot).map(([type,date])=>({type,date,offsetDays:days(pivot.pivotDate,date)}));
       const extended=refs.map(([type,date])=>({type,date,window:indicatorAnalysis.nearMissWindow(date),offsetDays:days(pivot.pivotDate,date)}))
-        .filter(item=>pivot.pivotDate>=item.window.from&&pivot.pivotDate<=item.window.to)
+        .filter(item=>pivot.pivotDate>=item.window.from&&pivot.pivotDate<=item.window.to
+          &&manualPivotDirectionMatches(pivot,item.type,source,rows,cycle))
         .sort((a,b)=>Math.abs(a.offsetDays)-Math.abs(b.offsetDays))[0]||null;
       const primary=selectedRefs[0]||extended;
       return Object.freeze({
@@ -182,7 +202,7 @@
       relationship:pivot.relationship,sourceDate:pivot.sourceDate,keyReference:pivot.keyReference,
       keySuppressed:pivot.keySuppressed,isManual:true
     }))].sort((a,b)=>a.pivotDate.localeCompare(b.pivotDate));
-    const classified=classifyStoredPivots(merged,cycle),manualKeys=new Map(active.filter(pivot=>pivot.keyReference).map(pivot=>[pivot.keyReference,pivot.sourceDate]));
+    const classified=classifyStoredPivots(merged,cycle,item.rows),manualKeys=new Map(active.filter(pivot=>pivot.keyReference).map(pivot=>[pivot.keyReference,pivot.sourceDate]));
     const referenceDates={START:cycle?.startDate,PEAK:cycle?.peakDate,TROUGH:cycle?.troughDate};
     return classified.map(pivot=>{
       let selectedReferences=(pivot.selectedReferences||[]).filter(ref=>!pivot.keySuppressed&&(!manualKeys.has(ref.type)||pivot.sourceDate===manualKeys.get(ref.type)));
@@ -191,7 +211,7 @@
       return Object.freeze({...pivot,selectedReferences:Object.freeze(selectedReferences),markerStatus:pivot.isManual&&!pivot.keyReference?(selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard'):overridden?'overridden_key':selectedReferences.length?'confirmed':pivot.markerStatus});
     });
   }
-  function effectivePivots(item,context){let pivots=context.mode==='history'?(item.storedPivots?.length||item.manualPivots?.length?mergeManualPivots(item,context.cycle):classifyStoredPivots(aiPivotRows(item),context.cycle)):[...(item.results||[]),...(item.nearMissPivots||[])];if(context.mode==='current'){const latest=item.evidence?.pending?{pivotDate:item.evidence.pending.candidateDate,regimeBoundaryDate:item.evidence.pending.regimeBoundaryDate,referenceType:'CURRENT_STRUCTURAL',markerStatus:item.evidence.status}:item.evidence?.result||null;pivots=[...(item.confirmedReferences||[]),...(latest?[latest]:[])];}return[...new Map(pivots.map(pivot=>[context.mode==='history'?pivot.pivotDate:`${pivot.markerStatus||''}:${pivot.referenceType||''}:${pivot.pivotDate}`,pivot])).values()];}
+  function effectivePivots(item,context){let pivots=context.mode==='history'?(item.storedPivots?.length||item.manualPivots?.length?mergeManualPivots(item,context.cycle):classifyStoredPivots(aiPivotRows(item),context.cycle,item.rows)):[...(item.results||[]),...(item.nearMissPivots||[])];if(context.mode==='current'){const latest=item.evidence?.pending?{pivotDate:item.evidence.pending.candidateDate,regimeBoundaryDate:item.evidence.pending.regimeBoundaryDate,referenceType:'CURRENT_STRUCTURAL',markerStatus:item.evidence.status}:item.evidence?.result||null;pivots=[...(item.confirmedReferences||[]),...(latest?[latest]:[])];}return[...new Map(pivots.map(pivot=>[context.mode==='history'?pivot.pivotDate:`${pivot.markerStatus||''}:${pivot.referenceType||''}:${pivot.pivotDate}`,pivot])).values()];}
   function displayItem(item,context){return{...item,displayRows:indicatorAnalysis.normalizeForDisplay(item.rows,context.displayRange.from,context.displayRange.to),displayPivots:effectivePivots(item,context)};}
   function rawValueAtDate(rows,date){
     const exact=rows.find(row=>row.time===date);
