@@ -380,7 +380,7 @@
       const toDate=next?.pivotDate||benchmarkEnd;
       const endPivot=type==='START'?selected.PEAK:type==='PEAK'?selected.TROUGH:null;
       const factor=scoring.endpointFactor(pivot,endPivot,type);
-      const relation=scoring.relationshipScore({pivots,fromDate,toDate,benchmarkEndDate:benchmarkEnd,rows:item.rows,valueAtDate:rawValueAtDate,expectedDirection:type==='PEAK'?-1:1,factor,manualRelationship:pivot?.isManual?pivot.relationship:null});
+      const relation=pivot?scoring.relationshipScore({pivots,fromDate,toDate,benchmarkEndDate:benchmarkEnd,rows:item.rows,valueAtDate:rawValueAtDate,expectedDirection:type==='PEAK'?-1:1,factor,manualRelationship:pivot.isManual?pivot.relationship:null}):{relationship:'unclear',score:0};
       const continuityStart=type==='TROUGH'?fromDate:pivot?.pivotDate;
       const intermediate=pivot?scoring.firstIntermediate(pivots,continuityStart,benchmarkEnd):null;
       const timeliness=scoring.timelinessScore(fromDate,pivot);
