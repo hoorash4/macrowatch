@@ -41,19 +41,21 @@
   function endpointFactor(startPivot,endPivot,type){
     return startPivot?.markerStatus==='confirmed'?1:startPivot?.markerStatus?0.5:0;
   }
-  function relationshipScore({pivots,fromDate,toDate,benchmarkEndDate=toDate,rows,valueAtDate,expectedDirection,factor,manualRelationship}){
+  function relationshipScore({pivots,fromDate,toDate,benchmarkEndDate=toDate,rows,valueAtDate,expectedDirection,factor,manualRelationship,startingPivot}){
     const totalDays=days(fromDate,benchmarkEndDate);
     if(totalDays<=0||!factor||manualRelationship==='unclear')return {relationship:manualRelationship||'unclear',score:0};
-    const points=[{pivotDate:fromDate},...intermediatePivots(pivots,fromDate,toDate),{pivotDate:toDate}];
+    const coveredFrom=startingPivot?.pivotDate>fromDate?startingPivot.pivotDate:fromDate;
+    if(coveredFrom>=toDate)return {relationship:manualRelationship||'unclear',score:0};
+    const points=[coveredFrom,...intermediatePivots(pivots,coveredFrom,toDate).map(pivot=>pivot.pivotDate),toDate];
     const segments=[];
     for(let index=1;index<points.length;index++){
       const left=points[index-1],right=points[index];
-      const start=valueAtDate(rows,left.pivotDate),end=valueAtDate(rows,right.pivotDate);
+      const start=valueAtDate(rows,left),end=valueAtDate(rows,right);
       if(!Number.isFinite(start)||!Number.isFinite(end))return {relationship:'unclear',score:0};
-      segments.push({direction:Math.sign(end-start),days:days(left.pivotDate,right.pivotDate)});
+      segments.push({direction:Math.sign(end-start),days:days(left,right)});
     }
-    const startValue=valueAtDate(rows,fromDate);
-    const priorPivots=[...(pivots||[])].filter(pivot=>pivot.pivotDate<fromDate)
+    const startValue=valueAtDate(rows,coveredFrom);
+    const priorPivots=[...(pivots||[])].filter(pivot=>pivot.pivotDate<coveredFrom)
       .sort((left,right)=>right.pivotDate.localeCompare(left.pivotDate));
     const entryDirection=priorPivots.map(pivot=>Math.sign(startValue-(Number.isFinite(pivot.pivotValue)?pivot.pivotValue:valueAtDate(rows,pivot.pivotDate))))
       .find(direction=>direction)||0;
