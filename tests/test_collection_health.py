@@ -203,28 +203,39 @@ class CollectionHealthTests(unittest.TestCase):
         ):
             self.assertEqual([], health.check_database(date(2026, 9, 16)))
 
-    def test_sector_flow_database_health_uses_only_durable_close_stage(self):
-        series = {
-            "sector_flow_rankings": (
-                "market_sector_weekly_rankings", "calculated_at", 4, {"price_stage": "eq.close"}
-            ),
-        }
-
+    def test_sector_flow_database_health_uses_latest_persisted_close_date(self):
         class SectorDb:
             def __init__(self):
-                self.filters = []
+                self.calls = []
 
             def request(self, method, table, params=None, **kwargs):
-                self.filters.append(params["price_stage"])
-                return [{"calculated_at": "2026-09-11T06:40:00+00:00"}]
+                self.calls.append((method, table, params))
+                return [{"market_date": "2026-09-22"}]
 
         db = SectorDb()
         with (
-            patch.object(health, "DATABASE_SERIES", series),
+            patch.object(health, "DATABASE_SERIES", {
+                "sector_flow_rankings": health.DATABASE_SERIES["sector_flow_rankings"],
+            }),
             patch.object(health, "SupabaseRest", return_value=db),
         ):
-            self.assertEqual([], health.check_database(date(2026, 9, 11)))
-        self.assertEqual(["eq.close"], db.filters)
+            self.assertEqual([], health.check_database(date(2026, 9, 23)))
+        self.assertEqual([("GET", "market_sector_etf_prices", {
+            "select": "market_date", "order": "market_date.desc", "limit": "1", "price_stage": "eq.close",
+        })], db.calls)
+
+    def test_sector_flow_database_health_still_reports_stale_close(self):
+        db = FakeDb({"market_sector_etf_prices": [{"market_date": "2026-09-18"}]})
+        with (
+            patch.object(health, "DATABASE_SERIES", {
+                "sector_flow_rankings": health.DATABASE_SERIES["sector_flow_rankings"],
+            }),
+            patch.object(health, "SupabaseRest", return_value=db),
+        ):
+            self.assertEqual(
+                ["DB 최신값 지연: sector_flow_rankings, latest=2026-09-18"],
+                health.check_database(date(2026, 9, 23)),
+            )
 
     def test_sector_scheduler_requires_exact_six_active_primary_retry_jobs(self):
         rows = [
@@ -267,3 +278,4 @@ class CollectionHealthTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
