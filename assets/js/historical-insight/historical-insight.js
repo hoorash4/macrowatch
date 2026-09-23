@@ -6,28 +6,17 @@
   const indexData=window.MacroWatchHistoricalData,cycleData=window.MacroWatchHistoricalCycles,indicatorData=window.MacroWatchHistoricalIndicators,indicatorAnalysis=window.MacroWatchHistoricalIndicatorAnalysis,selectionApi=window.MacroWatchHistoricalIndicatorSelection;
   let activeCode='NASDAQ_COMPOSITE',activeCase=null,activeMode='history',activeHistoricalCode=null,cases=[],currentSettings={currentName:'현재 국면 관찰 중'},currentSource=null,currentModel=null,requestToken=0,indexRepository,caseRepository,indicatorRepository,chart,activeRows=[],currentUser=null,isAdmin=false,functionClient=null,deleteCaseCode=null;
   let analysisCache=new Map(),visibleIndicators=[],selection=selectionApi?.create(),activeIndicatorContext=null,hiddenIndicatorCodes=new Set();
-  let manualPivotContext=null,expandedHistoricalCode=null;
-  const MANUAL_PIVOT_REASONS=Object.freeze([
-    '상승 추세가 멈추고 하락 전환을 가져 온 큰 변곡점 입니다.',
-    '상승이 멈추고 고점권 횡보로 국면이 바뀌었습니다.',
-    '상승 흐름에서 급등한 뒤 방향을 되돌렸고, 이후 하락 흐름이 이어졌습니다.',
-    '급등 후 급락으로 이어지며 상승 흐름이 꺾인 전환점입니다.',
-    '급등 후 추세적인 하락세로 전환됐습니다.',
-    '이전 고점에 다시 도달했으나 넘어서지 못하면서 상승의 종료가 드러났습니다.',
-    '하락 추세가 멈추고 상승 전환을 가져 온 큰 변곡점 입니다.',
-    '하락이 멈추고 저점권 횡보로 국면이 바뀌었습니다.',
-    '하락 흐름에서 급락한 뒤 방향을 되돌렸고, 이후 상승 흐름이 이어졌습니다.',
-    '급락 후 급등으로 이어지며 하락 흐름이 꺾인 전환점입니다.',
-    '급락 후 추세적인 상승세로 전환됐습니다.',
-    '이전 저점을 다시 시험했으나 더 내려가지 않으면서 하락의 종료가 드러났습니다.',
-    '횡보 범위를 위로 벗어나 새로운 상승 흐름이 시작됐습니다.',
-    '횡보 범위를 아래로 벗어나 새로운 하락 흐름이 시작됐습니다.',
-    '급등 이후 이전보다 높은 수준을 유지하며 흐름이 달라졌습니다.',
-    '급락 이후 이전보다 낮은 수준에 머물며 흐름이 달라졌습니다.',
-    '기존 추세를 크게 뛰어넘는 급등의 시작점입니다.',
-    '기존 추세를 크게 밑도는 급락의 시작점입니다.',
-    '이전/이후 추세가 불명확 합니다.'
-  ]);
+  let manualPivotContext=null,expandedHistoricalCode=null,manualReasonLoadError='';
+
+  async function loadManualReasonPresets(){
+    const select=$('historical-manual-pivot-reason');
+    try{
+      const result=await functionClient.invoke('admin-control',{action:'list_historical_pivot_reason_presets'});
+      select.replaceChildren(new Option('선택 근거를 고르세요',''));
+      for(const item of result.items||[])select.add(new Option(item.phrase,item.phrase));
+      manualReasonLoadError='';
+    }catch(error){manualReasonLoadError=`근거 문구 조회 실패: ${error?.message||'알 수 없는 오류'}`;}
+  }
 
   function state(kind,text){host.dataset.state=kind;host.setAttribute('aria-busy',String(kind==='loading'));status.textContent=text;message.textContent=kind==='ready'?'':text;message.hidden=kind==='ready';retry.hidden=kind!=='error';fullRange.disabled=caseRange.disabled=kind!=='ready';}
   function setMarket(code){activeCode=code;for(const button of marketButtons){const selected=button.dataset.historicalIndex===code;button.classList.toggle('is-active',selected);button.setAttribute('aria-selected',String(selected));}}
@@ -202,13 +191,18 @@
     $('historical-manual-pivot-title').textContent=`${item.meta.title} · ${existing?'변곡점 수정':'변곡점 추가'}`;
     $('historical-manual-pivot-date').value=manual&&!manual.isDeleted?manual.pivotDate:point.date;
     $('historical-manual-pivot-relationship').value=manual&&!manual.isDeleted?manual.relationship||'':'';
-    $('historical-manual-pivot-reason').value=manual&&!manual.isDeleted?manual.reason||'':'';
+    const reasonSelect=$('historical-manual-pivot-reason'),savedReason=manual&&!manual.isDeleted?manual.reason||'':'';
+    reasonSelect.querySelector?.('option[data-legacy-reason]')?.remove();
+    if(savedReason&&reasonSelect.options&&![...reasonSelect.options].some(option=>option.value===savedReason)){
+      const option=new Option(savedReason,savedReason);option.dataset.legacyReason='';reasonSelect.add(option);
+    }
+    reasonSelect.value=savedReason;
     $('historical-manual-pivot-comment').value=manual&&!manual.isDeleted?manual.comment||'':'';
     $('historical-manual-pivot-is-key').checked=classified?.markerStatus==='confirmed';
     $('historical-manual-pivot-reference').value=keyReference;
     $('historical-manual-pivot-reference').disabled=!$('historical-manual-pivot-is-key').checked;
     $('historical-manual-pivot-delete').hidden=!existing;
-    $('historical-manual-pivot-status').textContent='';
+    $('historical-manual-pivot-status').textContent=manualReasonLoadError;
     $('historical-manual-pivot-modal').hidden=false;
     $('historical-manual-pivot-date').focus();
   }
@@ -421,7 +415,7 @@
   function closeCurrentNameEditor(){const form=$('historical-current-name-form');form.hidden=true;$('historical-current-name-status').textContent='';}
   async function saveAnchors(values,output){if(!isAdmin||!activeCase)return;const savedCode=activeCase.code;output.textContent='저장 중';try{const rows=await indexRepository.load(activeCode);cycleData.calculate(activeCase,{...cycleData.marketCycle(activeCase,activeCode),...values},rows);await caseRepository.save(savedCode,activeCode,values,currentUser.id);cases=await caseRepository.load();const updated=cases.find(item=>item.code===savedCode);analysisCache.clear();rebuildCurrentModel();renderCaseList();updateModeAvailability();if(isHistoricalCase(updated))activeHistoricalCode=updated.code;await setMode(isCurrentCase(updated)?activeMode:'history');output.textContent='저장 완료';}catch(error){output.textContent=`저장 오류: ${error?.message||'알 수 없는 오류'}`;}}
   function setMode(mode){const available=cases.filter(isHistoricalCase);if(mode==='history'&&!available.length)return;activeMode=mode;for(const button of modeButtons){const selected=button.dataset.historicalMode===mode;button.classList.toggle('is-active',selected);button.setAttribute('aria-selected',String(selected));}const currentMode=mode==='current';$('historical-stage').classList.toggle('is-current-mode',currentMode);$('historical-past-sidebar').hidden=currentMode;$('historical-current-sidebar').hidden=!currentMode;$('historical-toolbar-title').textContent=currentMode?'현재 국면 차트':'과거 국면 차트';closeCurrentNameEditor();const desired=currentMode?rebuildCurrentModel():available.find(item=>item.code===activeHistoricalCode)||available[0];if(currentMode){$('historical-current-case-name').textContent=desired.name;$('historical-current-case-state').textContent=currentSource?'진행 중':'상시 관찰';$('historical-current-name-edit').hidden=!isAdmin;}return selectCase(desired.code);}
-  async function initialize(){try{if(!indexData||!cycleData||!window.MacroWatchFrontend)throw new Error('화면 모듈을 불러오지 못했습니다.');const client=window.macroWatchSupabase||window.MacroWatchFrontend.createSupabaseClient();if(!client)throw new Error('데이터 연결을 확인해 주세요.');window.macroWatchSupabase=client;indexRepository=indexData.createRepository(client);caseRepository=cycleData.createRepository(client);if(indicatorData)indicatorRepository=indicatorData.createRepository(client);const {data:authData,error:authError}=await client.auth.getSession();if(authError)throw authError;currentUser=authData.session?.user||null;if(!currentUser)throw new Error('로그인이 필요합니다.');const [{data:account,error:accountError},loadedCases,loadedSettings,hiddenCodes]=await Promise.all([client.from('user_accounts').select('is_admin').eq('user_id',currentUser.id).maybeSingle(),caseRepository.load(),caseRepository.loadCurrentSettings(),indicatorRepository?indicatorRepository.loadVisibility():Promise.resolve([])]);isAdmin=!accountError&&account?.is_admin===true;hiddenIndicatorCodes=new Set(hiddenCodes);functionClient=window.MacroWatchFrontend.createFunctionClient(client);$('historical-case-add').hidden=!isAdmin;$('historical-indicator-add').hidden=!isAdmin;cases=loadedCases;currentSettings=loadedSettings;rebuildCurrentModel();renderCaseList();const historicalCases=cases.filter(isHistoricalCase);updateModeAvailability();setMode(historicalCases.length?'history':'current');}catch(error){state('error','Historical Case를 불러오지 못했습니다. 다시 시도해 주세요.');console.error('[Historical Insight]',error);}}
+  async function initialize(){try{if(!indexData||!cycleData||!window.MacroWatchFrontend)throw new Error('화면 모듈을 불러오지 못했습니다.');const client=window.macroWatchSupabase||window.MacroWatchFrontend.createSupabaseClient();if(!client)throw new Error('데이터 연결을 확인해 주세요.');window.macroWatchSupabase=client;indexRepository=indexData.createRepository(client);caseRepository=cycleData.createRepository(client);if(indicatorData)indicatorRepository=indicatorData.createRepository(client);const {data:authData,error:authError}=await client.auth.getSession();if(authError)throw authError;currentUser=authData.session?.user||null;if(!currentUser)throw new Error('로그인이 필요합니다.');const [{data:account,error:accountError},loadedCases,loadedSettings,hiddenCodes]=await Promise.all([client.from('user_accounts').select('is_admin').eq('user_id',currentUser.id).maybeSingle(),caseRepository.load(),caseRepository.loadCurrentSettings(),indicatorRepository?indicatorRepository.loadVisibility():Promise.resolve([])]);isAdmin=!accountError&&account?.is_admin===true;hiddenIndicatorCodes=new Set(hiddenCodes);functionClient=window.MacroWatchFrontend.createFunctionClient(client);if(isAdmin)await loadManualReasonPresets();$('historical-case-add').hidden=!isAdmin;$('historical-indicator-add').hidden=!isAdmin;cases=loadedCases;currentSettings=loadedSettings;rebuildCurrentModel();renderCaseList();const historicalCases=cases.filter(isHistoricalCase);updateModeAvailability();setMode(historicalCases.length?'history':'current');}catch(error){state('error','Historical Case를 불러오지 못했습니다. 다시 시도해 주세요.');console.error('[Historical Insight]',error);}}
   modeButtons.forEach(button=>button.addEventListener('click',()=>setMode(button.dataset.historicalMode)));marketButtons.forEach(button=>button.addEventListener('click',()=>activeCase&&render(button.dataset.historicalIndex)));
   $('historical-case-add').addEventListener('click',()=>openCaseModal());
   $('historical-case-modal-close').addEventListener('click',closeCaseModal);
@@ -432,7 +426,6 @@
   $('historical-case-delete-confirm').addEventListener('click',confirmDeleteCase);
   const manualReasonSelect=$('historical-manual-pivot-reason');
   manualReasonSelect.add(new Option('선택 근거를 고르세요',''));
-  for(const reason of MANUAL_PIVOT_REASONS)manualReasonSelect.add(new Option(reason,reason));
   $('historical-manual-pivot-is-key').addEventListener('change',event=>{
     const reference=$('historical-manual-pivot-reference');reference.disabled=!event.target.checked;
     if(!event.target.checked)reference.value='';
