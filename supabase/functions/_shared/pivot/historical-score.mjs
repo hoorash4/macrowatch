@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v7';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v8';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -27,7 +27,7 @@ function classifyPivots(rows, cycle, manualKeys) {
   return rows.map(pivot => {
     let selectedReferences = refs.filter(([type]) => selected.get(type) === pivot)
       .map(([type, date]) => ({type, date, offsetDays: days(date, pivot.pivotDate)}))
-      .filter(ref => !manualKeys.has(ref.type) || pivot.sourceDate === manualKeys.get(ref.type));
+      .filter(ref => !pivot.keySuppressed && (!manualKeys.has(ref.type) || pivot.sourceDate === manualKeys.get(ref.type)));
     if (pivot.isManual && pivot.keyReference) {
       const date = cycle[`${pivot.keyReference.toLowerCase()}Date`];
       selectedReferences = [...selectedReferences.filter(ref => ref.type !== pivot.keyReference),
@@ -61,7 +61,8 @@ export function mergedPivots({automatic = [], manual = [], aiPivots = [], cycle,
   const manualRows = active.map(row => ({
     pivotOrder: Number.MAX_SAFE_INTEGER, pivotDate: dateOnly(row.pivot_date), pivotValue: Number(row.pivot_value),
     pivotReason: [row.reason, row.comment].filter(Boolean).join('\n'), relationship: row.relationship,
-    sourceDate: dateOnly(row.source_date), keyReference: row.key_references?.[indexCode] || null, isManual: true
+    sourceDate: dateOnly(row.source_date), keyReference: row.key_references?.[indexCode] || null,
+    keySuppressed: row.key_references?.[indexCode] === false, isManual: true
   }));
   const keys = new Map(active.filter(row => row.key_references?.[indexCode])
     .map(row => [row.key_references[indexCode], dateOnly(row.source_date)]));
