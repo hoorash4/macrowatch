@@ -152,7 +152,7 @@
     const trough=cycle.troughDate,bufferEnd=trough?new Date(`${trough}T00:00:00Z`):null;
     if(bufferEnd){bufferEnd.setUTCDate(1);bufferEnd.setUTCMonth(bufferEnd.getUTCMonth()+24);bufferEnd.setUTCDate(Math.min(Number(trough.slice(8,10)),new Date(Date.UTC(bufferEnd.getUTCFullYear(),bufferEnd.getUTCMonth()+1,0)).getUTCDate()));}
     const end=owner==='START'?cycle.peakDate:owner==='PEAK'?cycle.troughDate:bufferEnd?.toISOString().slice(0,10);
-    const next=pivots.find(candidate=>candidate.pivotDate>pivot.pivotDate),to=next?.pivotDate||end;
+    const next=pivots.find(candidate=>candidate.pivotDate>pivot.pivotDate&&candidate.pivotDate<=end),to=next?.pivotDate||end;
     if(!to||to<=pivot.pivotDate)return false;
     const fromValue=rawValueAtDate(rows,pivot.pivotDate),toValue=rawValueAtDate(rows,to);
     if(!Number.isFinite(fromValue)||!Number.isFinite(toValue))return false;

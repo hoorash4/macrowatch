@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v10';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v11';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -19,7 +19,7 @@ function manualDirectionMatches(pivot, type, pivots, observations, cycle) {
   const owner = [['START', cycle.startDate], ['PEAK', cycle.peakDate], ['TROUGH', cycle.troughDate]]
     .filter(([, date]) => date).sort((a, b) => Math.abs(days(a[1], pivot.pivotDate)) - Math.abs(days(b[1], pivot.pivotDate)))[0]?.[0] || type;
   const end = owner === 'START' ? cycle.peakDate : owner === 'PEAK' ? cycle.troughDate : shiftMonths(cycle.troughDate, 24);
-  const next = pivots.find(candidate => candidate.pivotDate > pivot.pivotDate);
+  const next = pivots.find(candidate => candidate.pivotDate > pivot.pivotDate && candidate.pivotDate <= end);
   const to = next?.pivotDate || end;
   if (!to || to <= pivot.pivotDate) return false;
   const fromValue = valueAt(observations, pivot.pivotDate), toValue = valueAt(observations, to);
