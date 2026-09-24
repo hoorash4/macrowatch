@@ -179,7 +179,9 @@ test('selected historical case expands its summary and performance above the unc
   assert.doesNotMatch(html,/id="historical-cycle-description"|id="historical-rise"|id="historical-fall"/);
   assert.doesNotMatch(html,/historical-drawdown|is-drawdown|고점 대비 낙폭/);
   assert.match(css,/\.historical-case-expanded\{[^}]*padding:10px/);
-  assert.match(css,/\.historical-case-expanded \.historical-cycle-description\{[^}]*border-bottom:1px solid var\(--theme-border\)[^}]*font-size:12px;font-weight:400;line-height:1\.65/);
+  assert.match(controller,/class="historical-case-overview"[\s\S]*data-cycle-summary/);
+  assert.match(css,/\.historical-case-overview\{[^}]*border:1px solid var\(--theme-border\)[^}]*border-radius:10px/);
+  assert.match(css,/\.historical-case-expanded \.historical-cycle-description\{[^}]*font-size:12px;font-weight:500;line-height:1\.6/);
   assert.match(css,/\.historical-case-expanded \.historical-cycle-performance\{[^}]*grid-template-columns:1fr/);
   assert.match(css,/\.historical-cycle-performance \.is-rise strong \{ color: #dc2626/);
   assert.match(css,/\.historical-cycle-performance \.is-fall strong \{ color: #2563eb/);
