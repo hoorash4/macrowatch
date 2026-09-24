@@ -213,7 +213,7 @@
     const referenceDates={START:cycle?.startDate,PEAK:cycle?.peakDate,TROUGH:cycle?.troughDate};
     return classified.map(pivot=>{
       let selectedReferences=(pivot.selectedReferences||[]).filter(ref=>!pivot.keySuppressed&&(!manualKeys.has(ref.type)||pivot.sourceDate===manualKeys.get(ref.type)));
-      if(pivot.isManual&&pivot.keyReference){const date=referenceDates[pivot.keyReference];selectedReferences=[...selectedReferences.filter(ref=>ref.type!==pivot.keyReference),{type:pivot.keyReference,date,offsetDays:date?Math.round((Date.parse(pivot.pivotDate)-Date.parse(date))/86400000):null}];}
+      if(pivot.isManual&&pivot.keyReference){const date=referenceDates[pivot.keyReference];selectedReferences=[{type:pivot.keyReference,date,offsetDays:date?Math.round((Date.parse(pivot.pivotDate)-Date.parse(date))/86400000):null}];}
       const overridden=pivot.markerStatus==='confirmed'&&!selectedReferences.length;
       return Object.freeze({...pivot,selectedReferences:Object.freeze(selectedReferences),markerStatus:pivot.isManual&&!pivot.keyReference?(selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard'):overridden?'overridden_key':selectedReferences.length?'confirmed':pivot.markerStatus});
     });
@@ -504,6 +504,9 @@
     if(manualPivotContext)manualPivotContext.keyTouched=true;
     const reference=$('historical-manual-pivot-reference');reference.disabled=!event.target.checked;
     if(!event.target.checked)reference.value='';
+  });
+  $('historical-manual-pivot-reference').addEventListener('change',()=>{
+    if(manualPivotContext)manualPivotContext.keyTouched=true;
   });
   $('historical-manual-pivot-close').addEventListener('click',closeManualPivotModal);
   $('historical-manual-pivot-cancel').addEventListener('click',closeManualPivotModal);

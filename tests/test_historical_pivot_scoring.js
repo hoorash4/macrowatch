@@ -165,7 +165,7 @@ test('composite uses only the approved 4:3:3 weights and floors the result',()=>
 
 test('stored scores match the existing front-end formulas for all three references',async()=>{
   const {mergedPivots,scoreReferences,SCORE_VERSION}=await storedScoring;
-  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v11');
+  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v12');
   const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
   const automatic=['2022-01-01','2022-02-01','2022-03-01'].map((date,index)=>({pivot_order:index,pivot_date:date,pivot_value:[0,10,5][index]}));
   const pivots=mergedPivots({automatic,manual:[],cycle,indexCode:'SP500'});
@@ -186,6 +186,21 @@ test('stored scores match the existing front-end formulas for all three referenc
   assert.equal(saved.LIST.rawScore,500+saved.START.score+saved.PEAK.score+saved.TROUGH.score);
   assert.equal(saved.LIST.score,Math.round(saved.LIST.rawScore/800*100));
   assert.equal(saved.LIST.extraDarkTieBreak,0);
+});
+
+test('a manual TROUGH is the only reference for a pivot in both saved score and other-index auto mode',async()=>{
+  const {mergedPivots,scoreReferences}=await storedScoring;
+  const cycle={startDate:'2018-12-24',peakDate:'2020-02-19',troughDate:'2020-03-23'};
+  const manual=[{source_date:'2020-03-19',pivot_date:'2020-03-19',pivot_value:1,
+    relationship:null,key_references:{SP500:'TROUGH'}}];
+  const selected=mergedPivots({manual,cycle,indexCode:'SP500'});
+  assert.deepEqual(selected[0].selectedReferences.map(ref=>ref.type),['TROUGH']);
+  const rows=[{observation_date:'2020-03-19',value:1},{observation_date:'2020-04-01',value:2}];
+  const saved=scoreReferences({pivots:selected,rows,cycle});
+  assert.equal(saved.PEAK.pivotDate,null);
+  assert.equal(saved.TROUGH.pivotDate,'2020-03-19');
+  const otherIndex=mergedPivots({manual,cycle,indexCode:'NASDAQ_COMPOSITE'});
+  assert.deepEqual(otherIndex[0].selectedReferences.map(ref=>ref.type),['PEAK','TROUGH']);
 });
 
 test('a manually inverse START pivot with a rising next segment becomes light gray and earns no own score',async()=>{

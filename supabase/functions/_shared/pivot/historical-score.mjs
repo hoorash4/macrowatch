@@ -1,4 +1,4 @@
-export const SCORE_VERSION = 'historical-pivot-4-3-3-v11';
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v12';
 const DAY = 86400000;
 const dateOnly = value => String(value || '').slice(0, 10);
 const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
@@ -67,8 +67,7 @@ function classifyPivots(rows, cycle, manualKeys, observations, marketRows = []) 
       .filter(ref => !pivot.keySuppressed && (!manualKeys.has(ref.type) || pivot.sourceDate === manualKeys.get(ref.type)));
     if (pivot.isManual && pivot.keyReference) {
       const date = cycle[`${pivot.keyReference.toLowerCase()}Date`];
-      selectedReferences = [...selectedReferences.filter(ref => ref.type !== pivot.keyReference),
-        {type: pivot.keyReference, date, offsetDays: date ? days(date, pivot.pivotDate) : null}];
+      selectedReferences = [{type: pivot.keyReference, date, offsetDays: date ? days(date, pivot.pivotDate) : null}];
     }
     const extended = refs.map(([type, date]) => ({type, date, window: darkWindow(date), offsetDays: days(date, pivot.pivotDate)}))
       .filter(ref => pivot.pivotDate >= ref.window.from && pivot.pivotDate <= ref.window.to

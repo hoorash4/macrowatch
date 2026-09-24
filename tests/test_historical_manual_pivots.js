@@ -79,6 +79,31 @@ test('manual key stays magenta and the displaced automatic key becomes gray',()=
   assert.equal(result.find(pivot=>pivot.pivotDate==='2022-01-20').markerStatus,'confirmed');
 });
 
+test('a manually selected TROUGH cannot keep an automatic PEAK on the same pivot',()=>{
+  const cycle={peakDate:'2022-01-01',troughDate:'2022-01-20'};
+  const item={rows:[],storedPivots:[],manualPivots:[{
+    sourceDate:'2022-01-19',pivotDate:'2022-01-19',pivotValue:42,
+    relationship:null,reason:'',comment:'',keyReference:'TROUGH'
+  }]};
+  const selected=merge(item,cycle)[0];
+  assert.deepEqual(Array.from(selected.selectedReferences,ref=>ref.type),['TROUGH']);
+  const summary=badges(item,{mode:'history',cycle,indexRows:[]});
+  assert.deepEqual(Array.from(summary.anchors),['TROUGH']);
+});
+
+test('changing only the reference dropdown marks the choice as a manual decision',()=>{
+  const from=controller.indexOf("  $('historical-manual-pivot-is-key').addEventListener('change'");
+  const to=controller.indexOf("  $('historical-manual-pivot-close').addEventListener",from);
+  assert.ok(from>=0&&to>from);
+  const listeners={},reference={disabled:false,value:'TROUGH'};
+  const scope={manualPivotContext:{keyTouched:false},$:id=>({
+    ...reference,addEventListener:(_event,listener)=>{listeners[id]=listener;}
+  })};
+  vm.runInNewContext(controller.slice(from,to),scope);
+  listeners['historical-manual-pivot-reference']();
+  assert.equal(scope.manualPivotContext.keyTouched,true);
+});
+
 test('an automatic key remains unchanged when no manual key claims its reference',()=>{
   const result=merge({storedPivots:[auto('2022-01-05',0)],manualPivots:[]},{startDate:'2022-01-05'});
   assert.equal(result[0].markerStatus,'confirmed');
