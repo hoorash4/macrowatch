@@ -31,11 +31,15 @@ test('a manual pivot wins by date even when automatic order differs',()=>{
   assert.equal(result[1].isManual,undefined);
 });
 
-test('manual deletion suppresses the same automatic date without showing a replacement',()=>{
-  const result=merge({storedPivots:[auto('2022-01-05',0),auto('2022-01-20',1)],manualPivots:[{
-    sourceDate:'2022-01-05',pivotDate:null,isDeleted:true
-  }]},{startDate:'2022-01-05'});
+test('physically deleted automatic pivot is absent without a manual deletion marker',()=>{
+  const result=merge({storedPivots:[auto('2022-01-20',1)],manualPivots:[]},{startDate:'2022-01-05'});
   assert.deepEqual(Array.from(result,pivot=>pivot.pivotDate),['2022-01-20']);
+  const sql=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260924091300_remove_deleted_pivot_markers.sql'),'utf8');
+  assert.match(sql,/delete from public\.historical_indicator_manual_pivots m/);
+  assert.match(sql,/a\.pivot_date=target_date/);
+  assert.match(sql,/target_date=p_source_date/);
+  assert.doesNotMatch(sql,/a\.pivot_date in \(p_source_date,p_pivot_date\)/);
+  assert.match(sql,/drop column is_deleted/);
 });
 
 test('manual key stays magenta and the displaced automatic key becomes gray',()=>{
@@ -95,12 +99,18 @@ test('the modal checks an automatically magenta pivot and unchecks an administra
   const scope={isAdmin:true,activeMode:'history',functionClient:{},activeIndicatorContext:{analyses:[item]},
     activeCase:{code:'case'},activeCode:'SP500',$:id=>fields[id],manualPivotContext:null,
     manualReasonLoadError:'',
+    autoPivotRows:item=>(item.pivots||[]).map(pivot=>({pivotDate:pivot.date,pivotValue:pivot.value})),
     effectivePivots:()=>[{pivotDate:'2022-01-05',markerStatus:'confirmed',selectedReferences:[{type:'START'}]}]};
   const open=vm.runInNewContext(`${controller.slice(from,to)}\nopenManualPivotModal`,scope);
   open({code:'TEST',date:'2022-01-05'});
   assert.equal(fields['historical-manual-pivot-is-key'].checked,true);
   assert.equal(fields['historical-manual-pivot-reference'].value,'START');
   assert.equal(scope.manualPivotContext.keyDecision,'auto');
+  assert.equal(fields['historical-manual-pivot-delete'].hidden,false);
+  item.storedPivots=[];
+  item.pivots=[{date:'2022-01-05',value:42,grade:'A'}];
+  open({code:'TEST',date:'2022-01-05'});
+  assert.equal(fields['historical-manual-pivot-delete'].hidden,false);
   scope.effectivePivots=()=>[{pivotDate:'2022-01-05',markerStatus:'manual_standard',selectedReferences:[]}];
   item.manualPivots=[{sourceDate:'2022-01-05',pivotDate:'2022-01-05',keyReference:null,keySuppressed:true,isDeleted:false}];
   open({code:'TEST',date:'2022-01-05'});

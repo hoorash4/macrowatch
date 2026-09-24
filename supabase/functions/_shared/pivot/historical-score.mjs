@@ -64,19 +64,19 @@ function classifyPivots(rows, cycle, manualKeys, observations) {
   });
 }
 
-export function mergedPivots({automatic = [], manual = [], aiPivots = [], cycle, indexCode, observations = []}) {
+export function mergedPivots({automatic = [], manual = [], fallbackAutomatic = [], cycle, indexCode, observations = []}) {
   const blocked = new Set(manual.map(pivot => dateOnly(pivot.source_date)));
   const occupied = new Set(manual.map(pivot => dateOnly(pivot.pivot_date)).filter(Boolean));
   const source = automatic.length ? automatic.map(row => ({
     pivotOrder: Number(row.pivot_order), pivotDate: dateOnly(row.pivot_date),
     pivotValue: Number(row.pivot_value), pivotType: String(row.pivot_type || ''),
     pivotReason: String(row.selection_reason || '')
-  })) : aiPivots.filter(row => ['A', 'B', 'C'].includes(String(row.grade || '').toUpperCase()))
+  })) : fallbackAutomatic.filter(row => ['A', 'B', 'C'].includes(String(row.grade || '').toUpperCase()))
     .map((row, index) => ({pivotOrder: index, pivotDate: dateOnly(row.date), pivotValue: Number(row.value),
       pivotType: String(row.type || ''), pivotReason: String(row.reason || '')}));
   const automaticRows = [...new Map(source.filter(row => !blocked.has(row.pivotDate) && !occupied.has(row.pivotDate))
     .map(row => [row.pivotDate, row])).values()];
-  const active = manual.filter(row => !row.is_deleted);
+  const active = manual;
   const manualRows = active.map(row => ({
     pivotOrder: Number.MAX_SAFE_INTEGER, pivotDate: dateOnly(row.pivot_date), pivotValue: Number(row.pivot_value),
     pivotReason: [row.reason, row.comment].filter(Boolean).join('\n'), relationship: row.relationship,

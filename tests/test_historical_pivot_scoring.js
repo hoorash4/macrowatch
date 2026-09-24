@@ -286,14 +286,12 @@ test('stored relationship includes a leading pivot while the index benchmark sta
   assert.equal(score.relationshipSuitabilityScore,100);
 });
 
-test('stored score input keeps manual deletion and the surviving manual pivot separate',async()=>{
+test('stored score input contains only the surviving manual pivot after physical deletion',async()=>{
   const {mergedPivots}=await storedScoring;
   const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
-  const automatic=[{pivot_order:0,pivot_date:'2022-01-01',pivot_value:1},
-    {pivot_order:1,pivot_date:'2022-02-01',pivot_value:2}];
-  const manual=[{source_date:'2022-01-01',is_deleted:true},
-    {source_date:'2022-02-01',pivot_date:'2022-02-03',pivot_value:3,
-      relationship:'positive',reason:'관리자 수정',key_references:{SP500:'PEAK'},is_deleted:false}];
+  const automatic=[{pivot_order:1,pivot_date:'2022-02-01',pivot_value:2}];
+  const manual=[{source_date:'2022-02-01',pivot_date:'2022-02-03',pivot_value:3,
+    relationship:'positive',reason:'관리자 수정',key_references:{SP500:'PEAK'}}];
   const merged=mergedPivots({automatic,manual,cycle,indexCode:'SP500'});
   assert.deepEqual(merged.map(point=>point.pivotDate),['2022-02-03']);
   assert.equal(merged[0].isManual,true);

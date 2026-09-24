@@ -66,13 +66,13 @@
       const key=`${caseCode}:${indexCode}:${seriesCode}`;
       if(manualPivotCache.has(key))return manualPivotCache.get(key);
       const promise=window.MacroWatchFrontend.queryAll(client,'historical_indicator_manual_pivots',
-        'source_date,pivot_date,pivot_value,relationship,reason,comment,key_references,is_deleted',
+        'source_date,pivot_date,pivot_value,relationship,reason,comment,key_references',
         'source_date',[['case_code',caseCode],['series_code',seriesCode]])
         .then(rows=>Object.freeze((rows||[]).map(row=>Object.freeze({
           sourceDate:String(row.source_date).slice(0,10),pivotDate:row.pivot_date?String(row.pivot_date).slice(0,10):null,
           pivotValue:row.pivot_value==null?null:Number(row.pivot_value),relationship:row.relationship||null,
           reason:row.reason||'',comment:row.comment||'',keyReference:row.key_references?.[indexCode]||null,
-          keySuppressed:row.key_references?.[indexCode]===false,isDeleted:row.is_deleted===true
+          keySuppressed:row.key_references?.[indexCode]===false
         }))));
       manualPivotCache.set(key,promise);promise.catch(()=>manualPivotCache.delete(key));return promise;
     }
@@ -81,7 +81,7 @@
       const key=`${caseCode}:${indexCode}`;
       if(scoreCache.has(key))return scoreCache.get(key);
       const promise=window.MacroWatchFrontend.queryAll(client,'historical_indicator_ai_scores',
-        'series_code,by_reference,ai_pivots,ai_regimes,ai_anomalies,scoring_version','series_code',
+        'series_code,by_reference,auto_pivots,ai_regimes,ai_anomalies,scoring_version','series_code',
         [['case_code',caseCode],['index_code',indexCode]])
         .then(rows=>new Map(rows.map(row=>[row.series_code,row])));
       scoreCache.set(key,promise);promise.catch(()=>scoreCache.delete(key));return promise;
@@ -95,12 +95,12 @@
   const regimeType=value=>({uptrend:'rising',downtrend:'falling',sideways:'sideways'}[value]||value);
   const shiftMonths=(value,amount)=>{const [year,month,day]=String(value).slice(0,10).split('-').map(Number),target=new Date(Date.UTC(year,month-1+amount,1)),last=new Date(Date.UTC(target.getUTCFullYear(),target.getUTCMonth()+1,0)).getUTCDate();target.setUTCDate(Math.min(day,last));return target.toISOString().slice(0,10);};
   function aiAnalysis(row,meta,rows){
-    const aiPivots=Object.freeze([...(row?.ai_pivots||[])]);
-    const reviewPivots=Object.freeze(aiPivots.filter(item=>String(item?.grade||'').toUpperCase()==='D').map(item=>Object.freeze({...item,reason:String(item?.reason||'')})));
+    const autoPivots=Object.freeze([...(row?.auto_pivots||[])]);
+    const reviewPivots=Object.freeze(autoPivots.filter(item=>String(item?.grade||'').toUpperCase()==='D').map(item=>Object.freeze({...item,reason:String(item?.reason||'')})));
     const regimes=Object.freeze((row?.ai_regimes||[]).map(item=>Object.freeze({type:regimeType(item.type),startDate:item.start_date,endDate:item.end_date,confidence:item.confidence})));
-    return Object.freeze({meta,rows,regimes,pivots:aiPivots,technicalPivots:aiPivots,marketRelevantPivots:[],nearMissPivots:[],
+    return Object.freeze({meta,rows,regimes,pivots:autoPivots,technicalPivots:autoPivots,marketRelevantPivots:[],nearMissPivots:[],
       byReference:Object.freeze(row?.scoring_version===SCORE_VERSION?row.by_reference||{}:{}),results:[],diagnostics:Object.freeze([]),
-      visible:aiPivots.length>0,aiSourced:true,scoringVersion:row?.scoring_version||null,
+      visible:autoPivots.length>0,scoringVersion:row?.scoring_version||null,
       reviewPivots,manualDisplayPivots:Object.freeze([]),anomalies:Object.freeze([...(row?.ai_anomalies||[])])});
   }
 })();

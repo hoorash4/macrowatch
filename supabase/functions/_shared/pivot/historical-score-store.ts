@@ -23,7 +23,7 @@ export async function recomputeHistoricalScore(admin: any, caseCode: string, ind
     admin.from('historical_cases').select('primary_index_code,pivot_source_index_code').eq('case_code', caseCode).single(),
     admin.from('historical_case_market_cycles').select('start_date,peak_date,trough_date')
       .eq('case_code', caseCode).eq('index_code', indexCode).single(),
-    admin.from('historical_indicator_ai_scores').select('by_reference,scoring_version,ai_pivots,ai_regimes,ai_anomalies,source_analyzed_at')
+    admin.from('historical_indicator_ai_scores').select('by_reference,scoring_version,auto_pivots,ai_regimes,ai_anomalies,source_analyzed_at')
       .eq('case_code', caseCode).eq('index_code', indexCode).eq('series_code', seriesCode).maybeSingle(),
   ]);
   if (caseError || cycleError || scoreError) throw caseError || cycleError || scoreError;
@@ -35,7 +35,7 @@ export async function recomputeHistoricalScore(admin: any, caseCode: string, ind
     allRows(admin.from('historical_indicator_pivots').select('pivot_order,pivot_date,pivot_value,pivot_type,selection_reason')
       .eq('case_code', caseCode).eq('index_code', pivotSourceIndex).eq('series_code', seriesCode).order('pivot_order')),
     allRows(admin.from('historical_indicator_manual_pivots')
-      .select('source_date,pivot_date,pivot_value,relationship,reason,comment,key_references,is_deleted')
+      .select('source_date,pivot_date,pivot_value,relationship,reason,comment,key_references')
       .eq('case_code', caseCode).eq('series_code', seriesCode).order('source_date')),
     allRows(admin.from('economic_chart_series_points').select('observation_date,value')
       .eq('series_code', seriesCode).gte('observation_date', shiftMonths(cycle.startDate, -6))
@@ -45,16 +45,18 @@ export async function recomputeHistoricalScore(admin: any, caseCode: string, ind
   ]);
   if (analysis.error) throw analysis.error;
   if (!points.length) return {skipped: true, reason: 'no_observations'};
-  const aiPivots = analysis.data?.pivots || scoreRow?.ai_pivots || [];
-  const pivots = mergedPivots({automatic, manual, aiPivots, cycle, indexCode, observations: points});
+  const blockedDates = new Set(manual.map(row => String(row.source_date).slice(0, 10)));
+  const fallbackAutoPivots = (analysis.data?.pivots || scoreRow?.auto_pivots || [])
+    .filter((row: any) => !blockedDates.has(String(row.date).slice(0, 10)));
+  const pivots = mergedPivots({automatic, manual, fallbackAutomatic: fallbackAutoPivots, cycle, indexCode, observations: points});
   const byReference = scoreReferences({pivots, rows: points, cycle});
   const identical = scoreRow?.scoring_version === SCORE_VERSION
     && canonicalJson(scoreRow.by_reference) === canonicalJson(byReference)
-    && canonicalJson(scoreRow.ai_pivots) === canonicalJson(aiPivots);
+    && canonicalJson(scoreRow.auto_pivots) === canonicalJson(fallbackAutoPivots);
   if (identical) return {skipped: true, reason: 'unchanged', byReference};
   const now = new Date().toISOString();
   const payload: any = {case_code: caseCode, index_code: indexCode, series_code: seriesCode,
-    by_reference: byReference, scoring_version: SCORE_VERSION, ai_pivots: aiPivots,
+    by_reference: byReference, scoring_version: SCORE_VERSION, auto_pivots: fallbackAutoPivots,
     ai_regimes: analysis.data?.regimes || scoreRow?.ai_regimes || [],
     ai_anomalies: analysis.data?.anomalies || scoreRow?.ai_anomalies || [],
     source_analyzed_at: analysis.data?.analyzed_at || scoreRow?.source_analyzed_at || now,

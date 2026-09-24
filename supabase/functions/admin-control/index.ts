@@ -618,16 +618,16 @@ export default {
         if (updateError) throw updateError;
 
         const { data: scoreRow, error: scoreError } = await admin.from("historical_indicator_ai_scores")
-          .select("ai_pivots").eq("case_code", caseCode).eq("index_code", indexCode).eq("series_code", seriesCode).maybeSingle();
+          .select("auto_pivots").eq("case_code", caseCode).eq("index_code", indexCode).eq("series_code", seriesCode).maybeSingle();
         if (scoreError) throw scoreError;
         if (scoreRow) {
-          const scorePivots = Array.isArray(scoreRow.ai_pivots) ? [...scoreRow.ai_pivots] : [];
+          const scorePivots = Array.isArray(scoreRow.auto_pivots) ? [...scoreRow.auto_pivots] : [];
           const scoreIndex = scorePivots.findIndex((item: any) => String(item?.date || "").slice(0,10) === pivotDate);
           if (scoreIndex >= 0) {
             if (resolution === "DELETE") scorePivots.splice(scoreIndex, 1);
             else scorePivots[scoreIndex] = { ...scorePivots[scoreIndex], grade: resolution, manual_resolution: true, manual_reviewed_at: now };
             const { error: scoreUpdateError } = await admin.from("historical_indicator_ai_scores").update({
-              ai_pivots: scorePivots, updated_at: now,
+              auto_pivots: scorePivots, updated_at: now,
             }).eq("case_code", caseCode).eq("index_code", indexCode).eq("series_code", seriesCode);
             if (scoreUpdateError) throw scoreUpdateError;
           }

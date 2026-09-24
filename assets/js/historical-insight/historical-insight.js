@@ -191,10 +191,10 @@
       });
     });
   }
-  function aiPivotRows(item){return(item.pivots||[]).filter(pivot=>['A','B','C'].includes(String(pivot.grade||'').toUpperCase())).map((pivot,index)=>({pivotOrder:index,pivotDate:String(pivot.date).slice(0,10),pivotValue:Number(pivot.value),pivotType:String(pivot.type||''),selectionReason:String(pivot.reason||'')}));}
+  function autoPivotRows(item){return(item.pivots||[]).filter(pivot=>['A','B','C'].includes(String(pivot.grade||'').toUpperCase())).map((pivot,index)=>({pivotOrder:index,pivotDate:String(pivot.date).slice(0,10),pivotValue:Number(pivot.value),pivotType:String(pivot.type||''),selectionReason:String(pivot.reason||'')}));}
   function mergeManualPivots(item,cycle){
-    const manual=item.manualPivots||[],blocked=new Set(manual.map(pivot=>pivot.sourceDate)),active=manual.filter(pivot=>!pivot.isDeleted),occupied=new Set(manual.map(pivot=>pivot.pivotDate).filter(Boolean));
-    const automatic=[...new Map((item.storedPivots?.length?item.storedPivots:aiPivotRows(item)).filter(pivot=>!blocked.has(pivot.pivotDate)&&!occupied.has(pivot.pivotDate)).map(pivot=>[pivot.pivotDate,pivot])).values()];
+    const manual=item.manualPivots||[],blocked=new Set(manual.map(pivot=>pivot.sourceDate)),active=manual,occupied=new Set(manual.map(pivot=>pivot.pivotDate).filter(Boolean));
+    const automatic=[...new Map((item.storedPivots?.length?item.storedPivots:autoPivotRows(item)).filter(pivot=>!blocked.has(pivot.pivotDate)&&!occupied.has(pivot.pivotDate)).map(pivot=>[pivot.pivotDate,pivot])).values()];
     const merged=[...automatic,...active.map(pivot=>({
       pivotOrder:Number.MAX_SAFE_INTEGER,pivotDate:pivot.pivotDate,pivotValue:pivot.pivotValue,
       selectionReason:[pivot.reason,pivot.comment].filter(Boolean).join('\n'),
@@ -211,7 +211,7 @@
       return Object.freeze({...pivot,selectedReferences:Object.freeze(selectedReferences),markerStatus:pivot.isManual&&!pivot.keyReference?(selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard'):overridden?'overridden_key':selectedReferences.length?'confirmed':pivot.markerStatus});
     });
   }
-  function effectivePivots(item,context){let pivots=context.mode==='history'?(item.storedPivots?.length||item.manualPivots?.length?mergeManualPivots(item,context.cycle):classifyStoredPivots(aiPivotRows(item),context.cycle,item.rows)):[...(item.results||[]),...(item.nearMissPivots||[])];if(context.mode==='current'){const latest=item.evidence?.pending?{pivotDate:item.evidence.pending.candidateDate,regimeBoundaryDate:item.evidence.pending.regimeBoundaryDate,referenceType:'CURRENT_STRUCTURAL',markerStatus:item.evidence.status}:item.evidence?.result||null;pivots=[...(item.confirmedReferences||[]),...(latest?[latest]:[])];}return[...new Map(pivots.map(pivot=>[context.mode==='history'?pivot.pivotDate:`${pivot.markerStatus||''}:${pivot.referenceType||''}:${pivot.pivotDate}`,pivot])).values()];}
+  function effectivePivots(item,context){let pivots=context.mode==='history'?(item.storedPivots?.length||item.manualPivots?.length?mergeManualPivots(item,context.cycle):classifyStoredPivots(autoPivotRows(item),context.cycle,item.rows)):[...(item.results||[]),...(item.nearMissPivots||[])];if(context.mode==='current'){const latest=item.evidence?.pending?{pivotDate:item.evidence.pending.candidateDate,regimeBoundaryDate:item.evidence.pending.regimeBoundaryDate,referenceType:'CURRENT_STRUCTURAL',markerStatus:item.evidence.status}:item.evidence?.result||null;pivots=[...(item.confirmedReferences||[]),...(latest?[latest]:[])];}return[...new Map(pivots.map(pivot=>[context.mode==='history'?pivot.pivotDate:`${pivot.markerStatus||''}:${pivot.referenceType||''}:${pivot.pivotDate}`,pivot])).values()];}
   function displayItem(item,context){return{...item,displayRows:indicatorAnalysis.normalizeForDisplay(item.rows,context.displayRange.from,context.displayRange.to),displayPivots:effectivePivots(item,context)};}
   function rawValueAtDate(rows,date){
     const exact=rows.find(row=>row.time===date);
@@ -226,23 +226,23 @@
     if(!isAdmin||activeMode!=='history'||!functionClient||!activeIndicatorContext)return;
     const item=activeIndicatorContext.analyses.find(candidate=>candidate.meta.code===point.code);
     if(!item)return;
-    const manual=(item.manualPivots||[]).find(pivot=>!pivot.isDeleted&&pivot.pivotDate===point.date)
-      ||(item.manualPivots||[]).find(pivot=>pivot.sourceDate===point.date||pivot.pivotDate===point.date);
-    const automatic=(item.storedPivots||[]).find(pivot=>pivot.pivotDate===point.date);
+    const manual=(item.manualPivots||[]).find(pivot=>pivot.pivotDate===point.date)
+      ||(item.manualPivots||[]).find(pivot=>pivot.sourceDate===point.date);
+    const automatic=(item.storedPivots?.length?item.storedPivots:autoPivotRows(item)).find(pivot=>pivot.pivotDate===point.date);
     const classified=effectivePivots(item,activeIndicatorContext).find(pivot=>pivot.pivotDate===point.date);
     const keyReference=manual?.keyReference||classified?.selectedReferences?.[0]?.type||'';
-    const existing=Boolean(manual&&!manual.isDeleted||automatic);
+    const existing=Boolean(manual||automatic);
     manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||point.date,item,existing,keyTouched:false,keyDecision:manual?.keyReference?'manual_on':manual?.keySuppressed?'manual_off':'auto'};
     $('historical-manual-pivot-title').textContent=`${item.meta.title} · ${existing?'변곡점 수정':'변곡점 추가'}`;
-    $('historical-manual-pivot-date').value=manual&&!manual.isDeleted?manual.pivotDate:point.date;
-    $('historical-manual-pivot-relationship').value=manual&&!manual.isDeleted?manual.relationship||'':'';
-    const reasonSelect=$('historical-manual-pivot-reason'),savedReason=manual&&!manual.isDeleted?manual.reason||'':'';
+    $('historical-manual-pivot-date').value=manual?manual.pivotDate:point.date;
+    $('historical-manual-pivot-relationship').value=manual?manual.relationship||'':'';
+    const reasonSelect=$('historical-manual-pivot-reason'),savedReason=manual?manual.reason||'':'';
     reasonSelect.querySelector?.('option[data-legacy-reason]')?.remove();
     if(savedReason&&reasonSelect.options&&![...reasonSelect.options].some(option=>option.value===savedReason)){
       const option=new Option(savedReason,savedReason);option.dataset.legacyReason='';reasonSelect.add(option);
     }
     reasonSelect.value=savedReason;
-    $('historical-manual-pivot-comment').value=manual&&!manual.isDeleted?manual.comment||'':'';
+    $('historical-manual-pivot-comment').value=manual?manual.comment||'':'';
     $('historical-manual-pivot-is-key').checked=classified?.markerStatus==='confirmed';
     $('historical-manual-pivot-reference').value=keyReference;
     $('historical-manual-pivot-reference').disabled=!$('historical-manual-pivot-is-key').checked;
@@ -261,7 +261,7 @@
     if(!isDeleted&&(!date||!Number.isFinite(value)||$('historical-manual-pivot-is-key').checked&&!keyReference)){
       status.textContent='날짜와 해당 날짜의 지표값을 확인해 주세요. 핵심 변곡점을 선택했다면 지수 기준점도 지정해 주세요.';return;
     }
-    if(!isDeleted&&keyReference&&(context.item.manualPivots||[]).some(pivot=>!pivot.isDeleted&&pivot.keyReference===keyReference&&pivot.sourceDate!==context.sourceDate)){
+    if(!isDeleted&&keyReference&&(context.item.manualPivots||[]).some(pivot=>pivot.keyReference===keyReference&&pivot.sourceDate!==context.sourceDate)){
       status.textContent=`이 지표의 ${keyReference} 핵심 변곡점이 이미 있습니다. 기존 지정을 관리자 화면에서 먼저 해제해 주세요.`;return;
     }
     const save=$('historical-manual-pivot-save'),del=$('historical-manual-pivot-delete');
