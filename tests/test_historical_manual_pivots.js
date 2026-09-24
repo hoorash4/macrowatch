@@ -14,8 +14,8 @@ assert.ok(start>=0&&end>start&&badgeStart>end&&badgeEnd>badgeStart);
 const {mergeManualPivots:merge,indicatorBadgeSummary:badges,manualPivotDirectionMatches:matchesDirection}=vm.runInNewContext(`${controller.slice(start,rawEnd)}\n${controller.slice(badgeStart,badgeEnd)}\n({mergeManualPivots,indicatorBadgeSummary,manualPivotDirectionMatches})`,{
   referenceOrder:['START','PEAK','TROUGH'],
   indicatorAnalysis:{
-    relevanceWindow:date=>date==='2022-11-19'?{from:'2022-08-19',to:'2022-12-19'}:{from:'2022-01-01',to:'2022-01-31'},
-    nearMissWindow:date=>date==='2022-11-19'?{from:'2022-05-19',to:'2023-01-19'}:date==='2023-06-01'?{from:'2022-12-01',to:'2023-08-01'}:{from:'2021-09-01',to:'2022-02-28'}
+    relevanceWindow:date=>date==='2022-11-19'?{from:'2022-08-19',to:'2022-12-19'}:date==='2022-09-30'?{from:'2022-06-30',to:'2022-10-30'}:{from:'2022-01-01',to:'2022-01-31'},
+    nearMissWindow:date=>date==='2022-11-19'?{from:'2022-05-19',to:'2023-01-19'}:date==='2022-09-30'?{from:'2022-03-30',to:'2022-11-30'}:date==='2023-06-01'?{from:'2022-12-01',to:'2023-08-01'}:{from:'2021-09-01',to:'2022-02-28'}
   }
 });
 const auto=(date,order)=>({pivotDate:date,pivotOrder:order,pivotValue:order});
@@ -27,6 +27,17 @@ test('saved inverse color compares only the first pivot-to-pivot direction',()=>
   const rows=[{time:'2022-01-01',value:30},{time:'2022-02-01',value:20},
     {time:'2022-03-01',value:40},{time:'2022-07-01',value:50}];
   assert.equal(matchesDirection(manual,'START',pivots,rows,cycle),true);
+});
+
+test('the frontend keeps a leading inverse TROUGH pivot magenta through the last monthly buffer observation',()=>{
+  const cycle={startDate:'2020-03-19',peakDate:'2021-07-06',troughDate:'2022-09-30'};
+  const rows=[{time:'2022-07-01',value:6.3},{time:'2022-09-01',value:5.5},{time:'2024-09-01',value:1.6}];
+  const indexRows=[{time:'2022-09-30',value:2155.49},{time:'2024-08-30',value:2674.31}];
+  const item={rows,storedPivots:[],manualPivots:[{sourceDate:'2022-07-01',pivotDate:'2022-07-01',
+    pivotValue:6.3,relationship:'inverse',reason:'관리자 근거',keyReference:null}]};
+  const result=merge(item,cycle,indexRows);
+  assert.equal(result[0].markerStatus,'confirmed');
+  assert.equal(result[0].selectedReferences[0].type,'TROUGH');
 });
 
 test('saved relationship ends its first segment at the next reference when no pivot occurs before it',()=>{

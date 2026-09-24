@@ -65,8 +65,8 @@
     for(let index=0;index<segments.length;index++){
       const segment=segments[index];
       let direction=segment.direction;
-      if(!direction)direction=savedDirection
-        ||segments.slice(0,index).reverse().find(previous=>previous.direction)?.direction||entryDirection;
+      if(!direction)direction=segments.slice(0,index).reverse().find(previous=>previous.direction)?.direction
+        ||entryDirection||savedDirection;
       if(direction>0)totals.up+=segment.days*(segment.direction?1:0.5);
       if(direction<0)totals.down+=segment.days*(segment.direction?1:0.5);
     }

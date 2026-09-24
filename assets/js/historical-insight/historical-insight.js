@@ -104,7 +104,7 @@
     catch(error){output.textContent='삭제 오류: '+(error?.message||'알 수 없는 오류');}
     finally{button.disabled=false;}
   }
-  function renderCaseList(){const root=$('historical-case-list');root.replaceChildren();for(const item of cases.filter(isHistoricalCase)){const row=document.createElement('div');row.className='historical-case-row';const button=document.createElement('button');button.type='button';button.className='historical-case';button.dataset.historicalCase=item.code;button.setAttribute('aria-expanded','false');const label=document.createElement('span'),badge=document.createElement('small');label.textContent=item.name;badge.textContent='확정';button.append(label,badge);button.addEventListener('click',()=>{if(activeCase?.code===item.code&&expandedHistoricalCode===item.code){expandedHistoricalCode=null;activeCaseButton();return;}expandedHistoricalCode=item.code;selectCase(item.code);});row.append(button);if(isAdmin){const actions=document.createElement('span');actions.className='historical-case-actions';const edit=document.createElement('button'),del=document.createElement('button');edit.type=del.type='button';edit.innerHTML='<i class="fa-solid fa-pen"></i>';del.innerHTML='<i class="fa-solid fa-trash"></i>';edit.title='수정';del.title='삭제';del.className='is-delete';edit.addEventListener('click',()=>openCaseModal(item));del.addEventListener('click',()=>openDeleteCase(item));actions.append(edit,del);row.append(actions);}const expanded=document.createElement('div');expanded.className='historical-case-expanded';expanded.dataset.historicalCaseExpanded=item.code;expanded.hidden=true;expanded.innerHTML='<p class="historical-cycle-description" data-cycle-summary></p><div class="historical-cycle-performance" aria-label="선택 시장 사이클 성과"><article class="is-rise"><span>상승 구간</span><strong data-cycle-rise>—</strong><small>상승 기간 <b data-cycle-rise-days>—</b></small></article><article class="is-fall"><span>하락 구간</span><strong data-cycle-fall>—</strong><small>하락 기간 <b data-cycle-fall-days>—</b></small></article></div>';row.append(expanded);root.append(row);}}
+  function renderCaseList(){const root=$('historical-case-list');root.replaceChildren();for(const item of cases.filter(isHistoricalCase)){const row=document.createElement('div');row.className='historical-case-row';const button=document.createElement('button');button.type='button';button.className='historical-case';button.dataset.historicalCase=item.code;button.setAttribute('aria-expanded','false');const label=document.createElement('span'),badge=document.createElement('small');label.textContent=item.name;badge.textContent='확정';button.append(label,badge);button.addEventListener('click',()=>{if(activeCase?.code===item.code&&expandedHistoricalCode===item.code){expandedHistoricalCode=null;activeCaseButton();return;}expandedHistoricalCode=item.code;selectCase(item.code);});row.append(button);if(isAdmin){const actions=document.createElement('span');actions.className='historical-case-actions';const edit=document.createElement('button'),del=document.createElement('button');edit.type=del.type='button';edit.innerHTML='<i class="fa-solid fa-pen"></i>';del.innerHTML='<i class="fa-solid fa-trash"></i>';edit.title='수정';del.title='삭제';del.className='is-delete';edit.addEventListener('click',()=>openCaseModal(item));del.addEventListener('click',()=>openDeleteCase(item));actions.append(edit,del);row.append(actions);}const expanded=document.createElement('div');expanded.className='historical-case-expanded';expanded.dataset.historicalCaseExpanded=item.code;expanded.hidden=true;expanded.innerHTML='<div class="historical-case-overview"><span>국면 요약</span><p class="historical-cycle-description" data-cycle-summary></p></div><div class="historical-cycle-performance" aria-label="선택 시장 사이클 성과"><article class="is-rise"><span>상승 구간</span><strong data-cycle-rise>—</strong><small>상승 기간 <b data-cycle-rise-days>—</b></small></article><article class="is-fall"><span>하락 구간</span><strong data-cycle-fall>—</strong><small>하락 기간 <b data-cycle-fall-days>—</b></small></article></div>';row.append(expanded);root.append(row);}}
 
   function activeCaseButton(){document.querySelectorAll('[data-historical-case]').forEach(button=>{const selected=button.dataset.historicalCase===activeCase?.code,expanded=selected&&button.dataset.historicalCase===expandedHistoricalCode;button.classList.toggle('is-active',selected);button.setAttribute('aria-expanded',String(expanded));button.closest('.historical-case-row').querySelector('[data-historical-case-expanded]').hidden=!expanded;});}
   function focusCase(){if(!chart||!activeRows.length||!activeCase)return;const cycle=cycleData.marketCycle(activeCase,activeCode);const from=cycle.startDate||activeCase.searchStart;const to=cycle.troughDate || cycle.peakDate || activeRows.at(-1).time;chart.focus(from,to,.12);}
@@ -116,7 +116,7 @@
     });
     indicatorRepository.clearScoreRows(caseCode,indexCode);
   }
-  async function calculateIndicatorContext(){const key=`${activeMode}:${activeCase.code}:${activeCode}`;if(analysisCache.has(key))return analysisCache.get(key);const coverage=await indicatorRepository.loadCoverage(),catalog=indicatorRepository.catalog(activeCode).filter(item=>!hiddenIndicatorCodes.has(item.code)),cycle=cycleData.marketCycle(activeCase,activeCode),end=indicatorAnalysis.analysisEnd(activeCase,cycle),latest=activeRows.at(-1)?.time||end,displayRange=indicatorAnalysis.displayWindow(activeCase,cycle,latest);if(activeMode==='history'){const eligible=catalog.filter(item=>{const c=coverage.get(item.code);return c&&c.firstDate<=activeCase.searchStart&&c.lastDate>=end;}),loadFrom=displayRange.from<activeCase.searchStart?displayRange.from:activeCase.searchStart,loadTo=displayRange.to>end?displayRange.to:end;let scores=await indicatorRepository.loadScoreRows(activeCase.code,activeCode);const stale=eligible.filter(item=>scores.get(item.code)?.scoring_version!==indicatorData.SCORE_VERSION).map(item=>item.code);if(stale.length&&isAdmin){await rebuildHistoricalScores(activeCase.code,activeCode,stale);scores=await indicatorRepository.loadScoreRows(activeCase.code,activeCode);}const analyses=await mapSeries(eligible,async item=>{const rows=await indicatorRepository.load(item.code,loadFrom,loadTo),analysis=indicatorData.aiAnalysis(scores.get(item.code),item,rows),[storedPivots,manualPivots]=await Promise.all([indicatorRepository.loadStoredPivots(activeCase.code,activeCase.pivotSourceIndex,item.code),indicatorRepository.loadManualPivots(activeCase.code,activeCode,item.code)]);return Object.freeze({...analysis,storedPivots,manualPivots});}),value=Object.freeze({mode:'history',analyses,end,displayRange,cycle});analysisCache.set(key,value);return value;}const usable=catalog.filter(item=>coverage.has(item.code)),historyStart=activeCase.searchStart,marketRows=activeRows,rawAnalyses=await mapSeries(usable,async item=>{const rows=await indicatorRepository.load(item.code,historyStart,latest);return indicatorAnalysis.analyzeCurrent(item,rows,historyStart,latest,{item:activeCase,cycle,marketRows});}),analyses=indicatorAnalysis.applyCurrentSynergy(rawAnalyses),value=Object.freeze({mode:'current',analyses,end:latest,displayRange});analysisCache.set(key,value);return value;}
+  async function calculateIndicatorContext(){const key=`${activeMode}:${activeCase.code}:${activeCode}`;if(analysisCache.has(key))return analysisCache.get(key);const coverage=await indicatorRepository.loadCoverage(),catalog=indicatorRepository.catalog(activeCode).filter(item=>!hiddenIndicatorCodes.has(item.code)),cycle=cycleData.marketCycle(activeCase,activeCode),end=indicatorAnalysis.analysisEnd(activeCase,cycle),latest=activeRows.at(-1)?.time||end,displayRange=indicatorAnalysis.displayWindow(activeCase,cycle,latest);if(activeMode==='history'){const eligible=catalog.filter(item=>{const c=coverage.get(item.code);return c&&c.firstDate<=activeCase.searchStart&&c.lastDate>=end;}),loadFrom=displayRange.from<activeCase.searchStart?displayRange.from:activeCase.searchStart,loadTo=displayRange.to>end?displayRange.to:end;let scores=await indicatorRepository.loadScoreRows(activeCase.code,activeCode);const stale=eligible.filter(item=>scores.get(item.code)?.scoring_version!==indicatorData.SCORE_VERSION).map(item=>item.code);if(stale.length&&isAdmin){await rebuildHistoricalScores(activeCase.code,activeCode,stale);scores=await indicatorRepository.loadScoreRows(activeCase.code,activeCode);}const analyses=await mapSeries(eligible,async item=>{const rows=await indicatorRepository.load(item.code,loadFrom,loadTo),analysis=indicatorData.aiAnalysis(scores.get(item.code),item,rows),[storedPivots,manualPivots]=await Promise.all([indicatorRepository.loadStoredPivots(activeCase.code,activeCase.pivotSourceIndex,item.code),indicatorRepository.loadManualPivots(activeCase.code,activeCode,item.code)]);return Object.freeze({...analysis,storedPivots,manualPivots});}),value=Object.freeze({mode:'history',analyses,end,displayRange,cycle,indexRows:activeRows});analysisCache.set(key,value);return value;}const usable=catalog.filter(item=>coverage.has(item.code)),historyStart=activeCase.searchStart,marketRows=activeRows,rawAnalyses=await mapSeries(usable,async item=>{const rows=await indicatorRepository.load(item.code,historyStart,latest);return indicatorAnalysis.analyzeCurrent(item,rows,historyStart,latest,{item:activeCase,cycle,marketRows});}),analyses=indicatorAnalysis.applyCurrentSynergy(rawAnalyses),value=Object.freeze({mode:'current',analyses,end:latest,displayRange});analysisCache.set(key,value);return value;}
   function candidatesFor(context){if(context.mode==='history')return{items:[...context.analyses].sort((a,b)=>(b.byReference?.LIST?.score??0)-(a.byReference?.LIST?.score??0)||(b.byReference?.LIST?.extraDarkTieBreak??0)-(a.byReference?.LIST?.extraDarkTieBreak??0)),signal:null};const rank={market_relevant_confirmed:0,structural_only:1,candidate:2,watch:3,watching:4},items=[...context.analyses].sort((a,b)=>(rank[a.evidence?.signalState]??5)-(rank[b.evidence?.signalState]??5)||b.evidence.score-a.evidence.score||a.meta.title.localeCompare(b.meta.title,'ko'));return{items,signal:indicatorAnalysis.currentPivotProbability(items)};}
   async function topIndicatorTotals(caseCode){
     const indexCodes=['SP500','NASDAQ_COMPOSITE','KOSPI'];
@@ -143,7 +143,7 @@
     }
     panel.hidden=!list.children.length;
   }
-  function manualPivotDirectionMatches(pivot,type,pivots,rows,cycle){
+  function manualPivotDirectionMatches(pivot,type,pivots,rows,cycle,indexRows=[]){
     if(!pivot.isManual||!['positive','inverse'].includes(pivot.relationship)||pivot.keyReference)return true;
     if(!rows?.length)return true;
     const dayDistance=(a,b)=>Math.abs(Date.parse(`${a}T00:00:00Z`)-Date.parse(`${b}T00:00:00Z`));
@@ -152,16 +152,23 @@
     const trough=cycle.troughDate,bufferEnd=trough?new Date(`${trough}T00:00:00Z`):null;
     if(bufferEnd){bufferEnd.setUTCDate(1);bufferEnd.setUTCMonth(bufferEnd.getUTCMonth()+24);bufferEnd.setUTCDate(Math.min(Number(trough.slice(8,10)),new Date(Date.UTC(bufferEnd.getUTCFullYear(),bufferEnd.getUTCMonth()+1,0)).getUTCDate()));}
     const end=owner==='START'?cycle.peakDate:owner==='PEAK'?cycle.troughDate:bufferEnd?.toISOString().slice(0,10);
-    const next=pivots.find(candidate=>candidate.pivotDate>pivot.pivotDate&&candidate.pivotDate<=end),to=next?.pivotDate||end;
+    const next=pivots.find(candidate=>candidate.pivotDate>(owner==='TROUGH'?cycle.troughDate:pivot.pivotDate)&&candidate.pivotDate<=end);
+    const to=next?.pivotDate||(owner==='TROUGH'?[...rows].reverse().find(row=>row.time<=end)?.time:end);
     if(!to||to<=pivot.pivotDate)return false;
     const fromValue=rawValueAtDate(rows,pivot.pivotDate),toValue=rawValueAtDate(rows,to);
     if(!Number.isFinite(fromValue)||!Number.isFinite(toValue))return false;
-    const direction=Math.sign(toValue-fromValue);
+    let direction=Math.sign(toValue-fromValue);
+    if(!direction){const previous=[...pivots].reverse().find(candidate=>candidate.pivotDate<pivot.pivotDate);direction=previous?Math.sign(fromValue-previous.pivotValue):0;}
     if(!direction)return true;
-    const expected=owner==='PEAK'?-1:1;
+    const startIndex=indexRows.find(row=>row.time===cycle.troughDate);
+    const endIndex=[...indexRows].reverse().find(row=>row.time<=to);
+    const expected=owner==='TROUGH'&&indexRows.length
+      ?startIndex&&endIndex&&endIndex.time>cycle.troughDate?Math.sign(endIndex.value-startIndex.value):0
+      :owner==='PEAK'?-1:1;
+    if(!expected)return false;
     return direction===(pivot.relationship==='positive'?expected:-expected);
   }
-  function classifyStoredPivots(pivots,cycle,rows=[]){
+  function classifyStoredPivots(pivots,cycle,rows=[],indexRows=[]){
     const refs=[['START',cycle?.startDate],['PEAK',cycle?.peakDate],['TROUGH',cycle?.troughDate]].filter(([,date])=>date);
     const days=(a,b)=>Math.round((Date.parse(`${a}T00:00:00Z`)-Date.parse(`${b}T00:00:00Z`))/86400000);
     const source=[...(pivots||[])];
@@ -169,7 +176,7 @@
     for(const [type,date] of refs){
       const window=indicatorAnalysis.relevanceWindow(date);
       const candidates=source.filter(pivot=>pivot.pivotDate>=window.from&&pivot.pivotDate<=window.to
-        &&manualPivotDirectionMatches(pivot,type,source,rows,cycle))
+        &&manualPivotDirectionMatches(pivot,type,source,rows,cycle,indexRows))
         .sort((a,b)=>Number(Boolean(b.isManual))-Number(Boolean(a.isManual))||Math.abs(days(a.pivotDate,date))-Math.abs(days(b.pivotDate,date))||a.pivotDate.localeCompare(b.pivotDate)||a.pivotOrder-b.pivotOrder);
       if(candidates.length)selectedByReference.set(type,candidates[0]);
     }
@@ -177,7 +184,7 @@
       const selectedRefs=refs.filter(([type])=>selectedByReference.get(type)===pivot).map(([type,date])=>({type,date,offsetDays:days(pivot.pivotDate,date)}));
       const extended=refs.map(([type,date])=>({type,date,window:indicatorAnalysis.nearMissWindow(date),offsetDays:days(pivot.pivotDate,date)}))
         .filter(item=>pivot.pivotDate>=item.window.from&&pivot.pivotDate<=item.window.to
-          &&manualPivotDirectionMatches(pivot,item.type,source,rows,cycle))
+          &&manualPivotDirectionMatches(pivot,item.type,source,rows,cycle,indexRows))
         .sort((a,b)=>Math.abs(a.offsetDays)-Math.abs(b.offsetDays))[0]||null;
       const primary=selectedRefs[0]||extended;
       return Object.freeze({
@@ -192,7 +199,7 @@
     });
   }
   function autoPivotRows(item){return(item.pivots||[]).filter(pivot=>['A','B','C'].includes(String(pivot.grade||'').toUpperCase())).map((pivot,index)=>({pivotOrder:index,pivotDate:String(pivot.date).slice(0,10),pivotValue:Number(pivot.value),pivotType:String(pivot.type||''),selectionReason:String(pivot.reason||'')}));}
-  function mergeManualPivots(item,cycle){
+  function mergeManualPivots(item,cycle,indexRows=[]){
     const manual=item.manualPivots||[],blocked=new Set(manual.map(pivot=>pivot.sourceDate)),active=manual,occupied=new Set(manual.map(pivot=>pivot.pivotDate).filter(Boolean));
     const automatic=[...new Map((item.storedPivots?.length?item.storedPivots:autoPivotRows(item)).filter(pivot=>!blocked.has(pivot.pivotDate)&&!occupied.has(pivot.pivotDate)).map(pivot=>[pivot.pivotDate,pivot])).values()];
     const merged=[...automatic,...active.map(pivot=>({
@@ -202,7 +209,7 @@
       relationship:pivot.relationship,sourceDate:pivot.sourceDate,keyReference:pivot.keyReference,
       keySuppressed:pivot.keySuppressed,isManual:true
     }))].sort((a,b)=>a.pivotDate.localeCompare(b.pivotDate));
-    const classified=classifyStoredPivots(merged,cycle,item.rows),manualKeys=new Map(active.filter(pivot=>pivot.keyReference).map(pivot=>[pivot.keyReference,pivot.sourceDate]));
+    const classified=classifyStoredPivots(merged,cycle,item.rows,indexRows),manualKeys=new Map(active.filter(pivot=>pivot.keyReference).map(pivot=>[pivot.keyReference,pivot.sourceDate]));
     const referenceDates={START:cycle?.startDate,PEAK:cycle?.peakDate,TROUGH:cycle?.troughDate};
     return classified.map(pivot=>{
       let selectedReferences=(pivot.selectedReferences||[]).filter(ref=>!pivot.keySuppressed&&(!manualKeys.has(ref.type)||pivot.sourceDate===manualKeys.get(ref.type)));
@@ -211,7 +218,7 @@
       return Object.freeze({...pivot,selectedReferences:Object.freeze(selectedReferences),markerStatus:pivot.isManual&&!pivot.keyReference?(selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard'):overridden?'overridden_key':selectedReferences.length?'confirmed':pivot.markerStatus});
     });
   }
-  function effectivePivots(item,context){let pivots=context.mode==='history'?(item.storedPivots?.length||item.manualPivots?.length?mergeManualPivots(item,context.cycle):classifyStoredPivots(autoPivotRows(item),context.cycle,item.rows)):[...(item.results||[]),...(item.nearMissPivots||[])];if(context.mode==='current'){const latest=item.evidence?.pending?{pivotDate:item.evidence.pending.candidateDate,regimeBoundaryDate:item.evidence.pending.regimeBoundaryDate,referenceType:'CURRENT_STRUCTURAL',markerStatus:item.evidence.status}:item.evidence?.result||null;pivots=[...(item.confirmedReferences||[]),...(latest?[latest]:[])];}return[...new Map(pivots.map(pivot=>[context.mode==='history'?pivot.pivotDate:`${pivot.markerStatus||''}:${pivot.referenceType||''}:${pivot.pivotDate}`,pivot])).values()];}
+  function effectivePivots(item,context){let pivots=context.mode==='history'?(item.storedPivots?.length||item.manualPivots?.length?mergeManualPivots(item,context.cycle,context.indexRows||[]):classifyStoredPivots(autoPivotRows(item),context.cycle,item.rows,context.indexRows||[])):[...(item.results||[]),...(item.nearMissPivots||[])];if(context.mode==='current'){const latest=item.evidence?.pending?{pivotDate:item.evidence.pending.candidateDate,regimeBoundaryDate:item.evidence.pending.regimeBoundaryDate,referenceType:'CURRENT_STRUCTURAL',markerStatus:item.evidence.status}:item.evidence?.result||null;pivots=[...(item.confirmedReferences||[]),...(latest?[latest]:[])];}return[...new Map(pivots.map(pivot=>[context.mode==='history'?pivot.pivotDate:`${pivot.markerStatus||''}:${pivot.referenceType||''}:${pivot.pivotDate}`,pivot])).values()];}
   function displayItem(item,context){return{...item,displayRows:indicatorAnalysis.normalizeForDisplay(item.rows,context.displayRange.from,context.displayRange.to),displayPivots:effectivePivots(item,context)};}
   function rawValueAtDate(rows,date){
     const exact=rows.find(row=>row.time===date);

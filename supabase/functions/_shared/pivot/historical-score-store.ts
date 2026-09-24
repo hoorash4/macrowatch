@@ -31,7 +31,7 @@ export async function recomputeHistoricalScore(admin: any, caseCode: string, ind
   const cycle = {startDate: String(cycleRow.start_date || '').slice(0, 10),
     peakDate: String(cycleRow.peak_date || '').slice(0, 10), troughDate: String(cycleRow.trough_date || '').slice(0, 10)};
   if (!cycle.startDate || !cycle.peakDate || !cycle.troughDate) return {skipped: true, reason: 'incomplete_cycle'};
-  const [automatic, manual, points, analysis] = await Promise.all([
+  const [automatic, manual, points, marketRows, analysis] = await Promise.all([
     allRows(admin.from('historical_indicator_pivots').select('pivot_order,pivot_date,pivot_value,pivot_type,selection_reason')
       .eq('case_code', caseCode).eq('index_code', pivotSourceIndex).eq('series_code', seriesCode).order('pivot_order')),
     allRows(admin.from('historical_indicator_manual_pivots')
@@ -40,6 +40,9 @@ export async function recomputeHistoricalScore(admin: any, caseCode: string, ind
     allRows(admin.from('economic_chart_series_points').select('observation_date,value')
       .eq('series_code', seriesCode).gte('observation_date', shiftMonths(cycle.startDate, -6))
       .lte('observation_date', shiftMonths(cycle.troughDate, 24)).order('observation_date')),
+    allRows(admin.from('market_index_prices').select('market_date,close')
+      .eq('index_code', indexCode).gte('market_date', cycle.troughDate)
+      .lte('market_date', shiftMonths(cycle.troughDate, 24)).order('market_date')),
     admin.from('historical_indicator_ai_analysis').select('pivots,regimes,anomalies,analyzed_at')
       .eq('case_code', caseCode).eq('index_code', pivotSourceIndex).eq('series_code', seriesCode).maybeSingle(),
   ]);
@@ -48,8 +51,8 @@ export async function recomputeHistoricalScore(admin: any, caseCode: string, ind
   const blockedDates = new Set(manual.map(row => String(row.source_date).slice(0, 10)));
   const fallbackAutoPivots = (analysis.data?.pivots || scoreRow?.auto_pivots || [])
     .filter((row: any) => !blockedDates.has(String(row.date).slice(0, 10)));
-  const pivots = mergedPivots({automatic, manual, fallbackAutomatic: fallbackAutoPivots, cycle, indexCode, observations: points});
-  const byReference = scoreReferences({pivots, rows: points, cycle});
+  const pivots = mergedPivots({automatic, manual, fallbackAutomatic: fallbackAutoPivots, cycle, indexCode, observations: points, marketRows});
+  const byReference = scoreReferences({pivots, rows: points, cycle, marketRows});
   const identical = scoreRow?.scoring_version === SCORE_VERSION
     && canonicalJson(scoreRow.by_reference) === canonicalJson(byReference)
     && canonicalJson(scoreRow.auto_pivots) === canonicalJson(fallbackAutoPivots);

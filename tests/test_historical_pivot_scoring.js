@@ -96,13 +96,46 @@ test('a fully flat span gives half credit when its relationship was set manually
   assert.deepEqual({...scoring.relationshipScore(input)},{relationship:'unclear',score:0});
 });
 
-test('a full flat span follows its entering pivot trend, with the saved relationship taking priority',()=>{
+test('a full flat span follows its entering pivot trend, even when the saved relationship differs',()=>{
   const rows=[{time:'2022-01-01',value:5},{time:'2022-02-01',value:5}];
   const at=(source,date)=>source.find(row=>row.time===date)?.value;
   const input={pivots:[{...pivot('2021-12-01'),pivotValue:10}],fromDate:'2022-01-01',toDate:'2022-02-01',
     rows,valueAtDate:at,expectedDirection:1,factor:1};
   assert.deepEqual({...scoring.relationshipScore(input)},{relationship:'inverse',score:50});
-  assert.deepEqual({...scoring.relationshipScore({...input,manualRelationship:'positive'})},{relationship:'positive',score:50});
+  assert.deepEqual({...scoring.relationshipScore({...input,manualRelationship:'positive'})},{relationship:'positive',score:0});
+});
+
+test('a monthly inverse TROUGH pivot keeps its key when the buffer ends after the final observation',async()=>{
+  const {mergedPivots,scoreReferences}=await storedScoring;
+  const cycle={startDate:'2020-03-19',peakDate:'2021-07-06',troughDate:'2022-09-30'};
+  const manual=[{source_date:'2022-07-01',pivot_date:'2022-07-01',pivot_value:6.3,
+    relationship:'inverse',key_references:{}}];
+  const rows=[{observation_date:'2022-07-01',value:6.3},{observation_date:'2022-09-01',value:5.5},
+    {observation_date:'2024-09-01',value:1.6}];
+  const marketRows=[{market_date:'2022-09-30',close:2155.49},{market_date:'2024-08-30',close:2674.31}];
+  const pivots=mergedPivots({manual,cycle,indexCode:'KOSPI',observations:rows,marketRows});
+  assert.equal(pivots[0].markerStatus,'confirmed');
+  const score=scoreReferences({pivots,rows,cycle,marketRows}).TROUGH;
+  assert.equal(score.pivotDate,'2022-07-01');
+  assert.equal(score.relationship,'inverse');
+  assert.equal(score.relationshipSuitabilityScore,100);
+});
+
+test('TROUGH suitability stops at its first later pivot and compares the index to that same end date',async()=>{
+  const {mergedPivots,scoreReferences}=await storedScoring;
+  const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
+  const manual=[{source_date:'2022-02-20',pivot_date:'2022-02-20',pivot_value:10,
+    relationship:'inverse',key_references:{}}];
+  const automatic=[{pivot_order:1,pivot_date:'2022-06-01',pivot_value:5}];
+  const rows=[{observation_date:'2022-02-20',value:10},{observation_date:'2022-03-01',value:9},
+    {observation_date:'2022-06-01',value:5},{observation_date:'2024-03-01',value:20}];
+  const marketRows=[{market_date:'2022-03-01',close:100},{market_date:'2022-06-01',close:120},
+    {market_date:'2024-03-01',close:80}];
+  const pivots=mergedPivots({automatic,manual,cycle,indexCode:'SP500',observations:rows,marketRows});
+  assert.equal(pivots[0].markerStatus,'confirmed');
+  const score=scoreReferences({pivots,rows,cycle,marketRows}).TROUGH;
+  assert.equal(score.relationship,'inverse');
+  assert.equal(score.relationshipSuitabilityScore,100);
 });
 
 test('a late starting pivot earns credit only after its date over the full benchmark',()=>{
@@ -132,7 +165,7 @@ test('composite uses only the approved 4:3:3 weights and floors the result',()=>
 
 test('stored scores match the existing front-end formulas for all three references',async()=>{
   const {mergedPivots,scoreReferences,SCORE_VERSION}=await storedScoring;
-  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v10');
+  assert.equal(SCORE_VERSION,'historical-pivot-4-3-3-v11');
   const cycle={startDate:'2022-01-01',peakDate:'2022-02-01',troughDate:'2022-03-01'};
   const automatic=['2022-01-01','2022-02-01','2022-03-01'].map((date,index)=>({pivot_order:index,pivot_date:date,pivot_value:[0,10,5][index]}));
   const pivots=mergedPivots({automatic,manual:[],cycle,indexCode:'SP500'});
