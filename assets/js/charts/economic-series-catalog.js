@@ -38,7 +38,7 @@
     {code:'US_PPI',compareCode:'US_CORE_PPI',title:'미국 PPI',compareTitle:'미국 Core PPI',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
     {code:'US_PCE',compareCode:'US_CORE_PCE',title:'미국 PCE 가격지수',compareTitle:'미국 Core PCE',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
     {code:'KR_CPI',compareCode:'KR_CORE_CPI',title:'한국 CPI',compareTitle:'한국 Core CPI',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
-    {code:'KR_PPI',compareCode:'KR_IMPORT_PRICE',title:'한국 PPI',compareTitle:'수입물가',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
+    {code:'KR_PPI',compareCode:'KR_IMPORT_PRICE',title:'한국 PPI',compareTitle:'한국 수입물가',frequency:'M',unit:'% YoY',category:'물가',decimals:2},
     {code:'US_SBDI_31_180',title:'미국 연체율',frequency:'M',unit:'%',category:BUSINESS_DISTRESS_CATEGORY,decimals:2},
     {code:'DRALACBS',title:'미국 은행 대출 연체율',frequency:'Q',unit:'%',category:BUSINESS_DISTRESS_CATEGORY,decimals:2},
     {code:'US_SBDFI',title:'미국 채무불이행률',frequency:'M',unit:'%',category:BUSINESS_DISTRESS_CATEGORY,decimals:2},
