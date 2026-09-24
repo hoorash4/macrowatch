@@ -172,6 +172,39 @@ test('the modal checks an automatically magenta pivot and unchecks an administra
   assert.equal(scope.manualPivotContext.keyDecision,'manual_off');
 });
 
+test('a moved manual pivot opens only at its current date, never at its former source date',()=>{
+  const from=controller.indexOf('  function openManualPivotModal(');
+  const to=controller.indexOf('  async function persistManualPivot(',from);
+  const fields=Object.fromEntries(['historical-manual-pivot-title','historical-manual-pivot-date',
+    'historical-manual-pivot-relationship','historical-manual-pivot-reason','historical-manual-pivot-comment',
+    'historical-manual-pivot-is-key','historical-manual-pivot-reference',
+    'historical-manual-pivot-delete','historical-manual-pivot-status','historical-manual-pivot-modal']
+    .map(id=>[id,{value:'',checked:false,hidden:true,focus(){}}]));
+  const item={meta:{code:'TEST',title:'기준금리'},storedPivots:[],manualPivots:[{
+    sourceDate:'1998-11-18',pivotDate:'1999-05-18',pivotValue:4.75,keyReference:null
+  }]};
+  const scope={isAdmin:true,activeMode:'history',functionClient:{},activeIndicatorContext:{analyses:[item]},
+    activeCase:{code:'case'},activeCode:'KOSPI',$:id=>fields[id],manualPivotContext:null,
+    manualReasonLoadError:'',autoPivotRows:()=>[],effectivePivots:()=>[]};
+  const open=vm.runInNewContext(`${controller.slice(from,to)}\nopenManualPivotModal`,scope);
+  open({code:'TEST',date:'1998-11-18'});
+  assert.equal(scope.manualPivotContext.existing,false);
+  assert.equal(scope.manualPivotContext.sourceDate,'1998-11-18');
+  assert.equal(fields['historical-manual-pivot-delete'].hidden,true);
+  open({code:'TEST',date:'1999-05-18'});
+  assert.equal(scope.manualPivotContext.existing,true);
+  assert.equal(fields['historical-manual-pivot-delete'].hidden,false);
+});
+
+test('moving a manual pivot frees its former date without deleting the destination point',()=>{
+  const sql=fs.readFileSync(path.join(__dirname,
+    '../supabase/migrations/20260924062912_rekey_moved_historical_manual_pivots.sql'),'utf8');
+  assert.match(sql,/set source_date=pivot_date\s+where source_date<>pivot_date/);
+  assert.match(sql,/if prior\.source_date is not null and p_source_date<>p_pivot_date then[\s\S]*set source_date=p_pivot_date/);
+  assert.match(sql,/values \(p_case_code,origin_index,p_series_code,p_pivot_date,p_pivot_date,p_pivot_value/);
+  assert.match(sql,/target_date=p_source_date/);
+});
+
 test('a date-only manual pivot sends optional metadata as null while keeping the measured value',async()=>{
   const html=fs.readFileSync(path.join(__dirname,'../historical-insight.html'),'utf8');
   const edge=fs.readFileSync(path.join(__dirname,'../supabase/functions/admin-control/index.ts'),'utf8');

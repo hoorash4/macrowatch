@@ -233,8 +233,7 @@
     if(!isAdmin||activeMode!=='history'||!functionClient||!activeIndicatorContext)return;
     const item=activeIndicatorContext.analyses.find(candidate=>candidate.meta.code===point.code);
     if(!item)return;
-    const manual=(item.manualPivots||[]).find(pivot=>pivot.pivotDate===point.date)
-      ||(item.manualPivots||[]).find(pivot=>pivot.sourceDate===point.date);
+    const manual=(item.manualPivots||[]).find(pivot=>pivot.pivotDate===point.date);
     const automatic=(item.storedPivots?.length?item.storedPivots:autoPivotRows(item)).find(pivot=>pivot.pivotDate===point.date);
     const classified=effectivePivots(item,activeIndicatorContext).find(pivot=>pivot.pivotDate===point.date);
     const keyReference=manual?.keyReference||classified?.selectedReferences?.[0]?.type||'';
