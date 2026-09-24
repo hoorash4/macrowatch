@@ -71,12 +71,12 @@ test('relationship measures straight pivot-to-pivot days, not raw micro-waves',(
   assert.deepEqual({...scoring.relationshipScore({...input,manualRelationship:'unclear'})},{relationship:'unclear',score:0});
 });
 
-test('trough relationship uses the full 24-month benchmark even if the next pivot is early',()=>{
+test('trough relationship uses the first next-pivot date as the benchmark end',()=>{
   const rows=[{time:'2022-01-01',value:0},{time:'2022-04-01',value:10}];
   const at=(source,date)=>source.find(row=>row.time===date)?.value;
-  const result=scoring.relationshipScore({pivots:[],fromDate:'2022-01-01',toDate:'2022-04-01',benchmarkEndDate:'2024-01-01',rows,valueAtDate:at,expectedDirection:1,factor:1});
+  const result=scoring.relationshipScore({pivots:[],fromDate:'2022-01-01',toDate:'2022-04-01',rows,valueAtDate:at,expectedDirection:1,factor:1});
   assert.equal(result.relationship,'positive');
-  assert.equal(result.score,12);
+  assert.equal(result.score,100);
 });
 
 test('a first flat segment gives half its days to the entering pivot trend',()=>{
