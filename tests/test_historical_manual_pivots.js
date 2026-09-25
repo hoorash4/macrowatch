@@ -11,9 +11,10 @@ const rawEnd=controller.indexOf('  function closeManualPivotModal(',end);
 const badgeStart=controller.indexOf('  const anchorSummary=');
 const badgeEnd=controller.indexOf('  const pivotReasonFor=',badgeStart);
 assert.ok(start>=0&&end>start&&badgeStart>end&&badgeEnd>badgeStart);
-const {mergeManualPivots:merge,indicatorBadgeSummary:badges,manualPivotDirectionMatches:matchesDirection}=vm.runInNewContext(`${controller.slice(start,rawEnd)}\n${controller.slice(badgeStart,badgeEnd)}\n({mergeManualPivots,indicatorBadgeSummary,manualPivotDirectionMatches})`,{
+const {mergeManualPivots:merge,indicatorBadgeSummary:badges,manualPivotDirectionMatches:matchesDirection,effectivePivots}=vm.runInNewContext(`${controller.slice(start,rawEnd)}\n${controller.slice(badgeStart,badgeEnd)}\n({mergeManualPivots,indicatorBadgeSummary,manualPivotDirectionMatches,effectivePivots})`,{
   referenceOrder:['START','PEAK','TROUGH'],
   indicatorAnalysis:{
+    normalizeForDisplay:(rows,from,to)=>rows.filter(r=>r.time>=from&&r.time<=to),
     relevanceWindow:date=>date==='2022-11-19'?{from:'2022-08-19',to:'2022-12-19'}:date==='2022-09-30'?{from:'2022-06-30',to:'2022-10-30'}:{from:'2022-01-01',to:'2022-01-31'},
     nearMissWindow:date=>date==='2022-11-19'?{from:'2022-05-19',to:'2023-01-19'}:date==='2022-09-30'?{from:'2022-03-30',to:'2022-11-30'}:date==='2023-06-01'?{from:'2022-12-01',to:'2023-08-01'}:{from:'2021-09-01',to:'2022-02-28'}
   }
@@ -579,6 +580,42 @@ test('indicatorBadgeSummary does not assign multiple reference badges to a singl
   const summary=badges(item,{mode:'history',cycle:{startDate:'2022-01-05',peakDate:'2022-11-19',troughDate:'2023-06-01'}});
   assert.deepEqual(Array.from(summary.anchors),[]);
   assert.deepEqual(Array.from(summary.nearMisses),['PEAK']);
+});
+
+test('effectivePivots filters pivots to only those within context.displayRange',()=>{
+  const cycle={startDate:'1994-04-04',peakDate:'1998-07-17',troughDate:'1998-08-31'};
+  const item={
+    storedPivots:[
+      {pivotDate:'1992-01-01',pivotValue:1,pivotOrder:0},
+      {pivotDate:'1996-12-01',pivotValue:2,pivotOrder:1},
+      {pivotDate:'2001-05-01',pivotValue:3,pivotOrder:2}
+    ],
+    manualPivots:[],
+    rows:[]
+  };
+  // S&P 500 displayRange: 1992-04-04 to 2000-08-31
+  const context={
+    mode:'history',
+    cycle,
+    displayRange:{from:'1992-04-04',to:'2000-08-31'},
+    indexRows:[]
+  };
+  const filtered=effectivePivots(item,context);
+  assert.equal(filtered.length,1);
+  assert.equal(filtered[0].pivotDate,'1996-12-01');
+
+  // KOSPI displayRange: 1990-08-21 to 2000-06-16
+  const kospiCycle={startDate:'1992-08-21',peakDate:'1994-11-08',troughDate:'1998-06-16'};
+  const kospiContext={
+    mode:'history',
+    cycle:kospiCycle,
+    displayRange:{from:'1990-08-21',to:'2000-06-16'},
+    indexRows:[]
+  };
+  const kospiFiltered=effectivePivots(item,kospiContext);
+  assert.equal(kospiFiltered.length,2);
+  assert.equal(kospiFiltered[0].pivotDate,'1992-01-01');
+  assert.equal(kospiFiltered[1].pivotDate,'1996-12-01');
 });
 
 

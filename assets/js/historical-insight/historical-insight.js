@@ -236,7 +236,19 @@
       return Object.freeze({...pivot,selectedReferences:Object.freeze(selectedReferences),markerStatus});
     });
   }
-  function effectivePivots(item,context){let pivots=context.mode==='history'?(item.storedPivots?.length||item.manualPivots?.length?mergeManualPivots(item,context.cycle,context.indexRows||[]):classifyStoredPivots(autoPivotRows(item),context.cycle,item.rows,context.indexRows||[])):[...(item.results||[]),...(item.nearMissPivots||[])];if(context.mode==='current'){const latest=item.evidence?.pending?{pivotDate:item.evidence.pending.candidateDate,regimeBoundaryDate:item.evidence.pending.regimeBoundaryDate,referenceType:'CURRENT_STRUCTURAL',markerStatus:item.evidence.status}:item.evidence?.result||null;pivots=[...(item.confirmedReferences||[]),...(latest?[latest]:[])];}return[...new Map(pivots.map(pivot=>[context.mode==='history'?pivot.pivotDate:`${pivot.markerStatus||''}:${pivot.referenceType||''}:${pivot.pivotDate}`,pivot])).values()];}
+  function effectivePivots(item,context){
+    let pivots=context.mode==='history'?(item.storedPivots?.length||item.manualPivots?.length?mergeManualPivots(item,context.cycle,context.indexRows||[]):classifyStoredPivots(autoPivotRows(item),context.cycle,item.rows,context.indexRows||[])):[...(item.results||[]),...(item.nearMissPivots||[])];
+    if(context.mode==='current'){
+      const latest=item.evidence?.pending?{pivotDate:item.evidence.pending.candidateDate,regimeBoundaryDate:item.evidence.pending.regimeBoundaryDate,referenceType:'CURRENT_STRUCTURAL',markerStatus:item.evidence.status}:item.evidence?.result||null;
+      pivots=[...(item.confirmedReferences||[]),...(latest?[latest]:[])];
+    }
+    const deduped=[...new Map(pivots.map(pivot=>[context.mode==='history'?pivot.pivotDate:`${pivot.markerStatus||''}:${pivot.referenceType||''}:${pivot.pivotDate}`,pivot])).values()];
+    if(context?.displayRange){
+      const {from,to}=context.displayRange;
+      return deduped.filter(pivot=>(!from||pivot.pivotDate>=from)&&(!to||pivot.pivotDate<=to));
+    }
+    return deduped;
+  }
   function displayItem(item,context){return{...item,displayRows:indicatorAnalysis.normalizeForDisplay(item.rows,context.displayRange.from,context.displayRange.to),displayPivots:effectivePivots(item,context)};}
   function rawValueAtDate(rows,date){
     const exact=rows.find(row=>row.time===date);
