@@ -226,10 +226,16 @@
       let markerStatus;
       if(pivot.isManual&&pivot.keyReference){
         markerStatus='confirmed';
-      }else if(pivot.isManual&&pivot.isVerified){
-        markerStatus='verified';
       }else if(pivot.isManual){
-        markerStatus=selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard';
+        if(selectedReferences.length){
+          markerStatus='confirmed';
+        }else if(pivot.markerStatus!=='reference_only'){
+          markerStatus='manual_standard';
+        }else if(pivot.isVerified){
+          markerStatus='verified';
+        }else{
+          markerStatus='reference_only';
+        }
       }else{
         markerStatus=overridden?'overridden_key':selectedReferences.length?'confirmed':pivot.markerStatus;
       }
@@ -269,7 +275,7 @@
     const classified=effectivePivots(item,activeIndicatorContext).find(pivot=>String(pivot.pivotDate||'').slice(0,10)===targetDate);
     const designatedReference=manual?.designatedReference||manual?.keyReference||classified?.designatedReference||classified?.referenceType||classified?.selectedReferences?.[0]?.type||'';
     const isKey=manual?.keySuppressed?false:Boolean(manual?.keyReference||classified?.markerStatus==='confirmed');
-    const isVerified=!isKey&&Boolean(manual?.isVerified||classified?.markerStatus==='verified');
+    const isVerified=Boolean(manual?.isVerified||classified?.markerStatus==='verified');
     const existing=Boolean(manual||automatic);
     manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||targetDate,item,existing,keyTouched:false,keyDecision:manual?.keyReference?'manual_on':manual?.isVerified?'manual_verified':manual?.designatedReference?'manual_ref':manual?.keySuppressed?'manual_off':'auto',isKey,isVerified,designatedReference};
     $('historical-manual-pivot-title').textContent=`${item.meta.title} · ${existing?'변곡점 수정':'변곡점 추가'}`;
@@ -592,12 +598,10 @@
   $('historical-case-delete-confirm').addEventListener('click',confirmDeleteCase);
   const manualReasonSelect=$('historical-manual-pivot-reason');
   manualReasonSelect.add(new Option('선택 근거를 고르세요',''));
-  $('historical-manual-pivot-is-key').addEventListener('change',e=>{
-    if(e.target.checked)$('historical-manual-pivot-is-verified').checked=false;
+  $('historical-manual-pivot-is-key').addEventListener('change',()=>{
     if(manualPivotContext)manualPivotContext.keyTouched=true;
   });
-  $('historical-manual-pivot-is-verified').addEventListener('change',e=>{
-    if(e.target.checked)$('historical-manual-pivot-is-key').checked=false;
+  $('historical-manual-pivot-is-verified').addEventListener('change',()=>{
     if(manualPivotContext)manualPivotContext.keyTouched=true;
   });
   $('historical-manual-pivot-reference').addEventListener('change',()=>{

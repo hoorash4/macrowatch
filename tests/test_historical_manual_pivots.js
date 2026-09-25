@@ -497,15 +497,20 @@ test('modal keeps reference dropdown enabled when is-key is unchecked',()=>{
   assert.doesNotMatch(controller,/\$\('historical-manual-pivot-reference'\)\.disabled=!event\.target\.checked/);
 });
 
-test('a verified manual pivot renders markerStatus verified regardless of near-miss window',()=>{
+test('a verified manual pivot retains manual_standard in near-miss window and renders verified outside near-miss',()=>{
   const cycle={startDate:'2022-01-05',peakDate:'2022-11-19',troughDate:'2023-06-01'};
-  const manual={sourceDate:'2022-02-15',pivotDate:'2022-02-15',pivotValue:42,relationship:'inverse',
+  const insideNearMiss={sourceDate:'2022-02-15',pivotDate:'2022-02-15',pivotValue:42,relationship:'inverse',
     reason:'확인 변곡점',comment:'',keyReference:null,isVerified:true,designatedReference:'START',isDeleted:false};
-  const result=merge({storedPivots:[],manualPivots:[manual]},cycle);
-  const target=result.find(pivot=>pivot.pivotDate==='2022-02-15');
-  assert.equal(target.markerStatus,'verified');
-  assert.equal(target.isManual,true);
-  assert.equal(target.isVerified,true);
+  const outsideNearMiss={sourceDate:'2022-05-15',pivotDate:'2022-05-15',pivotValue:45,relationship:'inverse',
+    reason:'확인 변곡점 외곽',comment:'',keyReference:null,isVerified:true,designatedReference:'START',isDeleted:false};
+  const result=merge({storedPivots:[],manualPivots:[insideNearMiss,outsideNearMiss]},cycle);
+  const insideTarget=result.find(pivot=>pivot.pivotDate==='2022-02-15');
+  assert.equal(insideTarget.markerStatus,'manual_standard');
+  assert.equal(insideTarget.isVerified,true);
+
+  const outsideTarget=result.find(pivot=>pivot.pivotDate==='2022-05-15');
+  assert.equal(outsideTarget.markerStatus,'verified');
+  assert.equal(outsideTarget.isVerified,true);
 });
 
 test('indicator repository parses verified reference into isVerified: true and designates reference',()=>{
@@ -570,6 +575,18 @@ test('modal checks confirmed or verified checkbox when opened for respective piv
 
   open({code:'TEST',date:'2022-05-10'});
   assert.equal(fields['historical-manual-pivot-is-key'].checked,false);
+  assert.equal(fields['historical-manual-pivot-is-verified'].checked,true);
+
+  // 확인 변곡점으로 등록되어 있으나 계산상 핵심인 경우: 둘 다 켜짐
+  const dualItem={meta:{code:'TEST',title:'테스트 지표'},storedPivots:[],manualPivots:[
+    {sourceDate:'2022-03-01',pivotDate:'2022-03-01',isVerified:true,keyReference:null}
+  ]};
+  scope.activeIndicatorContext.analyses=[dualItem];
+  scope.effectivePivots=()=>[
+    {pivotDate:'2022-03-01',markerStatus:'confirmed',isVerified:true}
+  ];
+  open({code:'TEST',date:'2022-03-01'});
+  assert.equal(fields['historical-manual-pivot-is-key'].checked,true);
   assert.equal(fields['historical-manual-pivot-is-verified'].checked,true);
 });
 

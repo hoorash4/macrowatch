@@ -84,10 +84,16 @@ function classifyPivots(rows, cycle, manualKeys, observations, marketRows = []) 
     let markerStatus;
     if (pivot.isManual && pivot.keyReference) {
       markerStatus = 'confirmed';
-    } else if (pivot.isManual && pivot.isVerified) {
-      markerStatus = 'verified';
     } else if (pivot.isManual) {
-      markerStatus = selectedReferences.length ? 'confirmed' : extended ? 'manual_standard' : 'reference_only';
+      if (selectedReferences.length) {
+        markerStatus = 'confirmed';
+      } else if (extended) {
+        markerStatus = 'manual_standard';
+      } else if (pivot.isVerified) {
+        markerStatus = 'verified';
+      } else {
+        markerStatus = 'reference_only';
+      }
     } else {
       markerStatus = overridden ? 'overridden_key' : selectedReferences.length ? 'confirmed' : extended ? 'near_miss' : 'reference_only';
     }
