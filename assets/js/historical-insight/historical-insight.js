@@ -315,9 +315,11 @@
     if(isDeleted){
       sendKeyReference=null;
     }else if(context.keyTouched){
-      sendKeyReference=isKey?selectedRef:isVerified?(selectedRef?`${selectedRef}_VERIFIED`:'VERIFIED'):selectedRef?`${selectedRef}_REF`:null;
+      sendKeyReference=isKey&&isVerified&&selectedRef?`${selectedRef}_VERIFIED`:isKey?selectedRef:isVerified?(selectedRef?`${selectedRef}_VERIFIED`:'VERIFIED'):selectedRef?`${selectedRef}_REF`:null;
     }else if(context.keyDecision==='manual_off'){
       sendKeyReference=null;
+    }else if(context.isKey&&context.isVerified&&context.designatedReference){
+      sendKeyReference=`${context.designatedReference}_VERIFIED`;
     }else if(context.keyDecision==='manual_on'||(context.isKey&&context.designatedReference)){
       sendKeyReference=context.designatedReference;
     }else if(context.keyDecision==='manual_verified'||context.isVerified){

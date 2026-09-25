@@ -122,9 +122,11 @@ export function mergedPivots({automatic = [], manual = [], fallbackAutomatic = [
   const active = manual;
   const manualRows = active.map(row => {
     const rawKey = row.key_references?.[indexCode];
-    const isKey = ['START', 'PEAK', 'TROUGH'].includes(rawKey);
-    const isVerified = rawKey === 'VERIFIED' || (typeof rawKey === 'string' && rawKey.endsWith('_VERIFIED'));
-    const designatedReference = isKey ? rawKey : (typeof rawKey === 'string' && rawKey.endsWith('_REF')) ? rawKey.replace('_REF', '') : (isVerified && rawKey !== 'VERIFIED') ? rawKey.replace('_VERIFIED', '') : null;
+    const hasAnyVerified = Object.values(row.key_references || {}).some(val => val === 'VERIFIED' || (typeof val === 'string' && val.endsWith('_VERIFIED')));
+    const isVerified = rawKey === 'VERIFIED' || (typeof rawKey === 'string' && rawKey.endsWith('_VERIFIED')) || hasAnyVerified;
+    const isKey = ['START', 'PEAK', 'TROUGH'].includes(rawKey) || (typeof rawKey === 'string' && ['START_VERIFIED', 'PEAK_VERIFIED', 'TROUGH_VERIFIED'].includes(rawKey));
+    const keyReference = isKey ? String(rawKey).replace('_VERIFIED', '') : null;
+    const designatedReference = keyReference || ((typeof rawKey === 'string' && rawKey.endsWith('_REF')) ? rawKey.replace('_REF', '') : (isVerified && rawKey !== 'VERIFIED' && typeof rawKey === 'string' && rawKey.endsWith('_VERIFIED')) ? rawKey.replace('_VERIFIED', '') : null);
     return {
       pivotOrder: Number.MAX_SAFE_INTEGER,
       pivotDate: dateOnly(row.pivot_date),
@@ -132,10 +134,10 @@ export function mergedPivots({automatic = [], manual = [], fallbackAutomatic = [
       pivotReason: [row.reason, row.comment].filter(Boolean).join('\n'),
       relationship: row.relationship,
       sourceDate: dateOnly(row.source_date),
-      keyReference: isKey ? rawKey : null,
+      keyReference: keyReference,
       designatedReference,
       isVerified,
-      keySuppressed: rawKey === false || isVerified || Boolean(designatedReference && !isKey),
+      keySuppressed: rawKey === false || (!isKey && isVerified) || Boolean(designatedReference && !isKey),
       isManual: true
     };
   });

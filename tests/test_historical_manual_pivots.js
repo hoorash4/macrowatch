@@ -479,7 +479,7 @@ test('indicator repository parses non-key reference (_REF) into designatedRefere
   const repositoryContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-indicator-data.js'),'utf8');
   assert.match(repositoryContent,/rawKey\.endsWith\('_REF'\)/);
   assert.match(repositoryContent,/rawKey\.replace\('_REF',''\)/);
-  assert.match(repositoryContent,/keyReference:isKey\?rawKey:null/);
+  assert.match(repositoryContent,/keyReference:isKey\?(?:rawKey|keyReference):null/);
 });
 
 test('admin control and migration accept non-key references and verified references',()=>{
@@ -634,5 +634,17 @@ test('effectivePivots filters pivots to only those within context.displayRange',
   assert.equal(kospiFiltered[0].pivotDate,'1992-01-01');
   assert.equal(kospiFiltered[1].pivotDate,'1996-12-01');
 });
+
+test('indicator repository parses combined key-verified and shares verified status across other indices',()=>{
+  const repoContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-indicator-data.js'),'utf8');
+  assert.match(repoContent,/hasAnyVerified=Object\.values\(row\.key_references\|\|\{\}\)\.some/);
+  assert.match(repoContent,/isVerified=rawKey==='VERIFIED'\|\|\(typeof rawKey==='string'&&rawKey\.endsWith\('_VERIFIED'\)\)\|\|hasAnyVerified/);
+  assert.match(repoContent,/\['START_VERIFIED','PEAK_VERIFIED','TROUGH_VERIFIED'\]/);
+});
+
+test('persistManualPivot generates combined key-verified reference when both key and verified are checked',()=>{
+  assert.match(controller,/sendKeyReference=isKey&&isVerified&&selectedRef\?`\$\{selectedRef\}_VERIFIED`:/);
+});
+
 
 
