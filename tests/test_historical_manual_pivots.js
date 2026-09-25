@@ -434,13 +434,24 @@ test('delete action remains hover-visible without mouse-focused rows sticking op
   assert.doesNotMatch(css,/\.historical-indicator-row:focus-within \.historical-indicator-actions/);
 });
 
-test('a non-key manual pivot with designated reference renders reference_only (light gray)',()=>{
+test('a non-key manual pivot with designated reference renders reference_only (light gray) outside near-miss window',()=>{
+  const cycle={startDate:'2022-01-05',peakDate:'2022-11-19',troughDate:'2023-06-01'};
+  const manual={sourceDate:'2022-04-15',pivotDate:'2022-04-15',pivotValue:42,relationship:'inverse',
+    reason:'관리자 선택',comment:'',keyReference:null,designatedReference:'START',isDeleted:false};
+  const result=merge({storedPivots:[],manualPivots:[manual]},cycle);
+  const target=result.find(pivot=>pivot.pivotDate==='2022-04-15');
+  assert.equal(target.markerStatus,'reference_only');
+  assert.equal(target.isManual,true);
+  assert.equal(target.designatedReference,'START');
+});
+
+test('a non-key manual pivot with designated reference renders manual_standard (dark gray) within near-miss window',()=>{
   const cycle={startDate:'2022-01-05',peakDate:'2022-11-19',troughDate:'2023-06-01'};
   const manual={sourceDate:'2022-02-15',pivotDate:'2022-02-15',pivotValue:42,relationship:'inverse',
     reason:'관리자 선택',comment:'',keyReference:null,designatedReference:'START',isDeleted:false};
   const result=merge({storedPivots:[],manualPivots:[manual]},cycle);
   const target=result.find(pivot=>pivot.pivotDate==='2022-02-15');
-  assert.equal(target.markerStatus,'reference_only');
+  assert.equal(target.markerStatus,'manual_standard');
   assert.equal(target.isManual,true);
   assert.equal(target.designatedReference,'START');
 });
@@ -456,7 +467,7 @@ test('a non-key manual pivot with designated reference does not displace a confi
   const nonKey=result.find(pivot=>pivot.pivotDate==='2022-02-15');
   assert.equal(confirmed.markerStatus,'confirmed');
   assert.equal(confirmed.keyReference,'START');
-  assert.equal(nonKey.markerStatus,'reference_only');
+  assert.equal(nonKey.markerStatus,'manual_standard');
   assert.equal(nonKey.keyReference,null);
   assert.equal(nonKey.designatedReference,'START');
 });

@@ -57,6 +57,7 @@ function classifyPivots(rows, cycle, manualKeys, observations, marketRows = []) 
   for (const [type, date] of refs) {
     const window = coreWindow(date);
     const candidates = rows.filter(pivot => pivot.pivotDate >= window.from && pivot.pivotDate <= window.to
+      && (!pivot.designatedReference || pivot.designatedReference === type)
       && manualDirectionMatches(pivot, type, rows, observations, cycle, marketRows))
       .sort((a, b) => Number(Boolean(b.isManual)) - Number(Boolean(a.isManual))
         || Math.abs(days(date, a.pivotDate)) - Math.abs(days(date, b.pivotDate))
@@ -80,12 +81,14 @@ function classifyPivots(rows, cycle, manualKeys, observations, marketRows = []) 
       .sort((a, b) => Math.abs(a.offsetDays) - Math.abs(b.offsetDays))[0];
     const wasConfirmed = refs.some(([type]) => selected.get(type) === pivot);
     const overridden = wasConfirmed && !selectedReferences.length;
-    const isManualNonKeyWithRef = pivot.isManual && pivot.designatedReference && !pivot.keyReference;
-    const markerStatus = isManualNonKeyWithRef
-      ? 'reference_only'
-      : pivot.isManual && !pivot.keyReference
-      ? selectedReferences.length ? 'confirmed' : extended ? 'manual_standard' : 'reference_only'
-      : overridden ? 'overridden_key' : selectedReferences.length ? 'confirmed' : extended ? 'near_miss' : 'reference_only';
+    let markerStatus;
+    if (pivot.isManual && pivot.keyReference) {
+      markerStatus = 'confirmed';
+    } else if (pivot.isManual) {
+      markerStatus = selectedReferences.length ? 'confirmed' : extended ? 'manual_standard' : 'reference_only';
+    } else {
+      markerStatus = overridden ? 'overridden_key' : selectedReferences.length ? 'confirmed' : extended ? 'near_miss' : 'reference_only';
+    }
     return {
       ...pivot,
       selectedReferences,
@@ -122,7 +125,7 @@ export function mergedPivots({automatic = [], manual = [], fallbackAutomatic = [
       sourceDate: dateOnly(row.source_date),
       keyReference: isKey ? rawKey : null,
       designatedReference,
-      keySuppressed: rawKey === false,
+      keySuppressed: rawKey === false || Boolean(designatedReference && !isKey),
       isManual: true
     };
   });

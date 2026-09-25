@@ -214,7 +214,7 @@
       pivotReason:[pivot.reason,pivot.comment].filter(Boolean).join('\n'),
       relationship:pivot.relationship,sourceDate:pivot.sourceDate,keyReference:pivot.keyReference,
       designatedReference:pivot.designatedReference||null,
-      keySuppressed:pivot.keySuppressed,isManual:true
+      keySuppressed:pivot.keySuppressed||Boolean(pivot.designatedReference&&!pivot.keyReference),isManual:true
     }))].sort((a,b)=>a.pivotDate.localeCompare(b.pivotDate));
     const classified=classifyStoredPivots(merged,cycle,item.rows,indexRows),manualKeys=new Map(active.filter(pivot=>pivot.keyReference).map(pivot=>[pivot.keyReference,pivot.sourceDate]));
     const referenceDates={START:cycle?.startDate,PEAK:cycle?.peakDate,TROUGH:cycle?.troughDate};
@@ -223,9 +223,9 @@
       if(pivot.isManual&&pivot.keyReference){const date=referenceDates[pivot.keyReference];selectedReferences=[{type:pivot.keyReference,date,offsetDays:date?Math.round((Date.parse(pivot.pivotDate)-Date.parse(date))/86400000):null}];}
       const overridden=pivot.markerStatus==='confirmed'&&!selectedReferences.length;
       let markerStatus;
-      if(pivot.isManual&&pivot.designatedReference&&!pivot.keyReference){
-        markerStatus='reference_only';
-      }else if(pivot.isManual&&!pivot.keyReference){
+      if(pivot.isManual&&pivot.keyReference){
+        markerStatus='confirmed';
+      }else if(pivot.isManual){
         markerStatus=selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard';
       }else{
         markerStatus=overridden?'overridden_key':selectedReferences.length?'confirmed':pivot.markerStatus;
@@ -339,7 +339,7 @@
     const nearMisses=referenceOrder.filter(type=>{
       if(!dates[type])return false;
       const window=indicatorAnalysis.nearMissWindow(dates[type]);
-      return pivots.some(pivot=>darkStatuses.has(pivot.markerStatus)&&pivot.pivotDate>=window.from&&pivot.pivotDate<=window.to);
+      return pivots.some(pivot=>darkStatuses.has(pivot.markerStatus)&&(!pivot.designatedReference||pivot.designatedReference===type)&&pivot.pivotDate>=window.from&&pivot.pivotDate<=window.to);
     });
     return{anchors,nearMisses};
   }
