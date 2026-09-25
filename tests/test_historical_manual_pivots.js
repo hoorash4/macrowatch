@@ -515,7 +515,7 @@ test('indicator repository parses verified reference into isVerified: true and d
 
 test('chart renders verified pivots with blue color from CSS variable',()=>{
   const chartContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-index-chart.js'),'utf8');
-  assert.match(chartContent,/verifiedStyle=\(\)=>\({\s*color:\s*getComputedStyle\(host\)\.getPropertyValue\('--historical-verified-color'\)\.trim\(\)\|\|'#388ecb',\s*textColor:\s*'#fff'\s*}\)/);
+  assert.match(chartContent,/verifiedStyle=\(\)=>\({\s*color:\s*getComputedStyle\(host\)\.getPropertyValue\('--historical-verified-color'\)\.trim\(\)\|\|'#5a92bb',\s*textColor:\s*'#fff'\s*}\)/);
   assert.match(chartContent,/result\.markerStatus==='verified'\?verifiedStyle\(\)/);
 });
 

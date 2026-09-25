@@ -51,7 +51,7 @@
     const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
     const referenceOnlyStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-near-miss-color').trim()||'#cbd5e1',textColor:getComputedStyle(host).getPropertyValue('--historical-near-miss-text').trim()||'#475569'});
     const nearMissStyle=()=>({color:document.documentElement.dataset.theme==='dark'?'#475569':'#64748b',textColor:'#fff'});
-    const verifiedStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-verified-color').trim()||'#388ecb',textColor:'#fff'});
+    const verifiedStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-verified-color').trim()||'#5a92bb',textColor:'#fff'});
     const pivotStyle=(result,color)=>result.markerStatus==='verified'?verifiedStyle():['near_miss','overridden_key','manual_standard'].includes(result.markerStatus)?nearMissStyle():result.markerStatus==='reference_only'?referenceOnlyStyle():{color,textColor:'#fff'};
     const displayValue=value=>window.MacroWatchFrontend.formatDisplayNumber(value);
     function isoDate(time) {
