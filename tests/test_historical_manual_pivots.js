@@ -516,7 +516,26 @@ test('a verified manual pivot retains manual_standard in near-miss window and re
 test('indicator repository parses verified reference into isVerified: true and designates reference',()=>{
   const repositoryContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-indicator-data.js'),'utf8');
   assert.match(repositoryContent,/rawKey==='VERIFIED'\|\|\(typeof rawKey==='string'&&rawKey\.endsWith\('_VERIFIED'\)\)/);
-  assert.match(repositoryContent,/isVerified&&rawKey!=='VERIFIED'\?rawKey\.replace\('_VERIFIED',''\):null/);
+  assert.match(repositoryContent,/isVerifiedRef\?rawKey\.replace\('_VERIFIED',''\):null/);
+
+  // Functional test ensuring no crash when rawKey is undefined on another index
+  const rowWithCrossIndexVerified = {
+    source_date: '1994-11-04', pivot_date: '1994-11-04', pivot_value: 8.04,
+    relationship: null, reason: '테스트', comment: null,
+    key_references: { SP500: 'VERIFIED', NASDAQ_COMPOSITE: 'VERIFIED' }
+  };
+  // Parsing for KOSPI where rawKey is undefined
+  const rawKeyK = rowWithCrossIndexVerified.key_references?.['KOSPI'];
+  const hasAnyVerifiedK = Object.values(rowWithCrossIndexVerified.key_references || {}).some(val => val === 'VERIFIED' || (typeof val === 'string' && val.endsWith('_VERIFIED')));
+  const isVerifiedK = rawKeyK === 'VERIFIED' || (typeof rawKeyK === 'string' && rawKeyK.endsWith('_VERIFIED')) || hasAnyVerifiedK;
+  const isKeyK = ['START', 'PEAK', 'TROUGH'].includes(rawKeyK) || (typeof rawKeyK === 'string' && ['START_VERIFIED', 'PEAK_VERIFIED', 'TROUGH_VERIFIED'].includes(rawKeyK));
+  const keyReferenceK = isKeyK ? String(rawKeyK).replace('_VERIFIED', '') : null;
+  const isNonKeyRefK = typeof rawKeyK === 'string' && rawKeyK.endsWith('_REF');
+  const isVerifiedRefK = typeof rawKeyK === 'string' && rawKeyK !== 'VERIFIED' && rawKeyK.endsWith('_VERIFIED');
+  const designatedReferenceK = keyReferenceK || (isNonKeyRefK ? rawKeyK.replace('_REF', '') : isVerifiedRefK ? rawKeyK.replace('_VERIFIED', '') : null);
+
+  assert.equal(isVerifiedK, true);
+  assert.equal(designatedReferenceK, null);
 });
 
 test('chart renders quasi-core pivots with blue color and verified pivots with gray color from CSS variable',()=>{

@@ -75,7 +75,8 @@
           const isKey=['START','PEAK','TROUGH'].includes(rawKey)||(typeof rawKey==='string'&&['START_VERIFIED','PEAK_VERIFIED','TROUGH_VERIFIED'].includes(rawKey));
           const keyReference=isKey?String(rawKey).replace('_VERIFIED',''):null;
           const isNonKeyRef=typeof rawKey==='string'&&rawKey.endsWith('_REF');
-          const designatedReference=keyReference||(isNonKeyRef?rawKey.replace('_REF',''):isVerified&&rawKey!=='VERIFIED'?rawKey.replace('_VERIFIED',''):null);
+          const isVerifiedRef=typeof rawKey==='string'&&rawKey!=='VERIFIED'&&rawKey.endsWith('_VERIFIED');
+          const designatedReference=keyReference||(isNonKeyRef?rawKey.replace('_REF',''):isVerifiedRef?rawKey.replace('_VERIFIED',''):null);
           return Object.freeze({
             sourceDate:String(row.source_date).slice(0,10),pivotDate:row.pivot_date?String(row.pivot_date).slice(0,10):null,
             pivotValue:row.pivot_value==null?null:Number(row.pivot_value),relationship:row.relationship||null,
