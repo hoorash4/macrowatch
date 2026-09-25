@@ -145,7 +145,7 @@ test('the modal checks an automatically magenta pivot and unchecks an administra
   assert.ok(from>=0&&to>from);
   const fields=Object.fromEntries(['historical-manual-pivot-title','historical-manual-pivot-date',
     'historical-manual-pivot-relationship','historical-manual-pivot-reason','historical-manual-pivot-comment',
-    'historical-manual-pivot-is-key','historical-manual-pivot-reference',
+    'historical-manual-pivot-is-key','historical-manual-pivot-is-verified','historical-manual-pivot-reference',
     'historical-manual-pivot-delete','historical-manual-pivot-status','historical-manual-pivot-modal']
     .map(id=>[id,{value:'',checked:false,hidden:true,focus(){}}]));
   const item={meta:{code:'TEST',title:'테스트 지표'},storedPivots:[auto('2022-01-05',0)],manualPivots:[]};
@@ -177,7 +177,7 @@ test('a moved manual pivot opens only at its current date, never at its former s
   const to=controller.indexOf('  async function persistManualPivot(',from);
   const fields=Object.fromEntries(['historical-manual-pivot-title','historical-manual-pivot-date',
     'historical-manual-pivot-relationship','historical-manual-pivot-reason','historical-manual-pivot-comment',
-    'historical-manual-pivot-is-key','historical-manual-pivot-reference',
+    'historical-manual-pivot-is-key','historical-manual-pivot-is-verified','historical-manual-pivot-reference',
     'historical-manual-pivot-delete','historical-manual-pivot-status','historical-manual-pivot-modal']
     .map(id=>[id,{value:'',checked:false,hidden:true,focus(){}}]));
   const item={meta:{code:'TEST',title:'기준금리'},storedPivots:[],manualPivots:[{
@@ -219,6 +219,7 @@ test('a date-only manual pivot sends optional metadata as null while keeping the
   const from=controller.indexOf('  async function persistManualPivot('),to=controller.indexOf('  const referenceOrder=',from);
   assert.ok(from>=0&&to>from);
   const fields=Object.fromEntries(['historical-manual-pivot-date','historical-manual-pivot-is-key',
+    'historical-manual-pivot-is-verified',
     'historical-manual-pivot-reference','historical-manual-pivot-relationship','historical-manual-pivot-reason',
     'historical-manual-pivot-comment','historical-manual-pivot-status','historical-manual-pivot-save',
     'historical-manual-pivot-delete'].map(id=>[id,{value:'',checked:false,disabled:false,textContent:''}]));
@@ -243,6 +244,7 @@ test('a date-only manual pivot sends optional metadata as null while keeping the
 test('new automatic decisions and existing administrator key-off remain distinct on save',async()=>{
   const from=controller.indexOf('  async function persistManualPivot('),to=controller.indexOf('  const referenceOrder=',from);
   const fields=Object.fromEntries(['historical-manual-pivot-date','historical-manual-pivot-is-key',
+    'historical-manual-pivot-is-verified',
     'historical-manual-pivot-reference','historical-manual-pivot-relationship','historical-manual-pivot-reason',
     'historical-manual-pivot-comment','historical-manual-pivot-status','historical-manual-pivot-save',
     'historical-manual-pivot-delete'].map(id=>[id,{value:'',checked:false,disabled:false,textContent:''}]));
@@ -479,12 +481,12 @@ test('indicator repository parses non-key reference (_REF) into designatedRefere
   assert.match(repositoryContent,/keyReference:isKey\?rawKey:null/);
 });
 
-test('admin control and migration accept non-key references START_REF, PEAK_REF, TROUGH_REF',()=>{
+test('admin control and migration accept non-key references and verified references',()=>{
   const edge=fs.readFileSync(path.join(__dirname,'../supabase/functions/admin-control/index.ts'),'utf8');
-  const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260926050000_manual_pivot_non_key_reference.sql'),'utf8');
-  assert.match(edge,/\["START", "PEAK", "TROUGH", "AUTO", "START_REF", "PEAK_REF", "TROUGH_REF"\]\.includes\(keyReference\)/);
-  assert.match(migration,/p_key_reference not in \('START',\s*'PEAK',\s*'TROUGH',\s*'AUTO',\s*'START_REF',\s*'PEAK_REF',\s*'TROUGH_REF'\)/);
-  assert.match(migration,/elsif p_key_reference in \('START_REF',\s*'PEAK_REF',\s*'TROUGH_REF'\) then/);
+  const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260926061500_manual_pivot_verified_status.sql'),'utf8');
+  assert.match(edge,/\["START", "PEAK", "TROUGH", "AUTO", "START_REF", "PEAK_REF", "TROUGH_REF", "VERIFIED", "START_VERIFIED", "PEAK_VERIFIED", "TROUGH_VERIFIED"\]\.includes\(keyReference\)/);
+  assert.match(migration,/p_key_reference not in \('START',\s*'PEAK',\s*'TROUGH',\s*'AUTO',\s*'START_REF',\s*'PEAK_REF',\s*'TROUGH_REF',\s*'VERIFIED',\s*'START_VERIFIED',\s*'PEAK_VERIFIED',\s*'TROUGH_VERIFIED'\)/);
+  assert.match(migration,/elsif p_key_reference in \('START_REF',\s*'PEAK_REF',\s*'TROUGH_REF',\s*'VERIFIED',\s*'START_VERIFIED',\s*'PEAK_VERIFIED',\s*'TROUGH_VERIFIED'\) then/);
 });
 
 test('modal keeps reference dropdown enabled when is-key is unchecked',()=>{
@@ -492,5 +494,41 @@ test('modal keeps reference dropdown enabled when is-key is unchecked',()=>{
   assert.doesNotMatch(modalHtml,/<select id="historical-manual-pivot-reference"[^>]*disabled/);
   assert.match(controller,/\$\('historical-manual-pivot-reference'\)\.disabled=false;/);
   assert.doesNotMatch(controller,/\$\('historical-manual-pivot-reference'\)\.disabled=!event\.target\.checked/);
+});
+
+test('a verified manual pivot renders markerStatus verified regardless of near-miss window',()=>{
+  const cycle={startDate:'2022-01-05',peakDate:'2022-11-19',troughDate:'2023-06-01'};
+  const manual={sourceDate:'2022-02-15',pivotDate:'2022-02-15',pivotValue:42,relationship:'inverse',
+    reason:'확인 변곡점',comment:'',keyReference:null,isVerified:true,designatedReference:'START',isDeleted:false};
+  const result=merge({storedPivots:[],manualPivots:[manual]},cycle);
+  const target=result.find(pivot=>pivot.pivotDate==='2022-02-15');
+  assert.equal(target.markerStatus,'verified');
+  assert.equal(target.isManual,true);
+  assert.equal(target.isVerified,true);
+});
+
+test('indicator repository parses verified reference into isVerified: true and designates reference',()=>{
+  const repositoryContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-indicator-data.js'),'utf8');
+  assert.match(repositoryContent,/rawKey==='VERIFIED'\|\|\(typeof rawKey==='string'&&rawKey\.endsWith\('_VERIFIED'\)\)/);
+  assert.match(repositoryContent,/isVerified&&rawKey!=='VERIFIED'\?rawKey\.replace\('_VERIFIED',''\):null/);
+});
+
+test('chart renders verified pivots with #7b97aa',()=>{
+  const chartContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-index-chart.js'),'utf8');
+  assert.match(chartContent,/verifiedStyle=\(\)=>\({\s*color:\s*'#7b97aa',\s*textColor:\s*'#fff'\s*}\)/);
+  assert.match(chartContent,/result\.markerStatus==='verified'\?verifiedStyle\(\)/);
+});
+
+test('historical insight renames near-miss section to 보조 변곡점 and adds description',()=>{
+  const insightContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-insight.js'),'utf8');
+  assert.match(insightContent,/darkHeading\.textContent='보조 변곡점';/);
+  assert.match(insightContent,/darkDesc\.className='historical-pivot-dark-desc';/);
+  assert.match(insightContent,/지수 기준점과 타이밍은 다소 차이가 있으나, 시장의 방향성을 조기에 예고했거나 사후에 추세를 확증해 준 의미 있는 변곡점입니다/);
+});
+
+test('modal contains 확인 변곡점 checkbox',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../historical-insight.html'),'utf8');
+  assert.match(html,/id="historical-manual-pivot-is-verified"/);
+  assert.match(html,/확인 변곡점/);
 });
 

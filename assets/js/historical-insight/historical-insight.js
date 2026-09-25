@@ -214,6 +214,7 @@
       pivotReason:[pivot.reason,pivot.comment].filter(Boolean).join('\n'),
       relationship:pivot.relationship,sourceDate:pivot.sourceDate,keyReference:pivot.keyReference,
       designatedReference:pivot.designatedReference||null,
+      isVerified:Boolean(pivot.isVerified),
       keySuppressed:pivot.keySuppressed||Boolean(pivot.designatedReference&&!pivot.keyReference),isManual:true
     }))].sort((a,b)=>a.pivotDate.localeCompare(b.pivotDate));
     const classified=classifyStoredPivots(merged,cycle,item.rows,indexRows),manualKeys=new Map(active.filter(pivot=>pivot.keyReference).map(pivot=>[pivot.keyReference,pivot.sourceDate]));
@@ -225,6 +226,8 @@
       let markerStatus;
       if(pivot.isManual&&pivot.keyReference){
         markerStatus='confirmed';
+      }else if(pivot.isManual&&pivot.isVerified){
+        markerStatus='verified';
       }else if(pivot.isManual){
         markerStatus=selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard';
       }else{
@@ -253,8 +256,9 @@
     const classified=effectivePivots(item,activeIndicatorContext).find(pivot=>pivot.pivotDate===point.date);
     const designatedReference=manual?.designatedReference||manual?.keyReference||classified?.referenceType||classified?.selectedReferences?.[0]?.type||'';
     const isKey=manual?Boolean(manual.keyReference):classified?.markerStatus==='confirmed';
+    const isVerified=Boolean(manual?.isVerified);
     const existing=Boolean(manual||automatic);
-    manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||point.date,item,existing,keyTouched:false,keyDecision:manual?.keyReference?'manual_on':manual?.designatedReference?'manual_ref':manual?.keySuppressed?'manual_off':'auto',isKey,designatedReference};
+    manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||point.date,item,existing,keyTouched:false,keyDecision:manual?.keyReference?'manual_on':manual?.isVerified?'manual_verified':manual?.designatedReference?'manual_ref':manual?.keySuppressed?'manual_off':'auto',isKey,isVerified,designatedReference};
     $('historical-manual-pivot-title').textContent=`${item.meta.title} · ${existing?'변곡점 수정':'변곡점 추가'}`;
     $('historical-manual-pivot-date').value=manual?manual.pivotDate:point.date;
     $('historical-manual-pivot-relationship').value=manual?manual.relationship||'':'';
@@ -266,6 +270,7 @@
     reasonSelect.value=savedReason;
     $('historical-manual-pivot-comment').value=manual?manual.comment||'':'';
     $('historical-manual-pivot-is-key').checked=isKey;
+    $('historical-manual-pivot-is-verified').checked=isVerified;
     $('historical-manual-pivot-reference').value=designatedReference;
     $('historical-manual-pivot-reference').disabled=false;
     $('historical-manual-pivot-delete').hidden=!existing;
@@ -278,6 +283,7 @@
     if(!isAdmin||!context||!functionClient)return;
     const status=$('historical-manual-pivot-status'),date=$('historical-manual-pivot-date').value,
       isKey=$('historical-manual-pivot-is-key').checked,
+      isVerified=$('historical-manual-pivot-is-verified').checked,
       selectedRef=$('historical-manual-pivot-reference').value||'',
       value=isDeleted?null:rawValueAtDate(context.item.rows,date);
     if(!isDeleted&&(!date||!Number.isFinite(value)||(isKey&&!selectedRef))){
@@ -290,11 +296,13 @@
     if(isDeleted){
       sendKeyReference=null;
     }else if(context.keyTouched){
-      sendKeyReference=isKey?selectedRef:selectedRef?`${selectedRef}_REF`:null;
+      sendKeyReference=isKey?selectedRef:isVerified?(selectedRef?`${selectedRef}_VERIFIED`:'VERIFIED'):selectedRef?`${selectedRef}_REF`:null;
     }else if(context.keyDecision==='manual_off'){
       sendKeyReference=null;
     }else if(context.keyDecision==='manual_on'||(context.isKey&&context.designatedReference)){
       sendKeyReference=context.designatedReference;
+    }else if(context.keyDecision==='manual_verified'||context.isVerified){
+      sendKeyReference=context.designatedReference?`${context.designatedReference}_VERIFIED`:'VERIFIED';
     }else if(context.keyDecision==='manual_ref'||(!context.isKey&&context.designatedReference)){
       sendKeyReference=`${context.designatedReference}_REF`;
     }else{
@@ -483,10 +491,13 @@
     const darkPivots=item.byReference?.LIST?.darkPivots||[];
     if(darkPivots.length){
       const darkHeading=document.createElement('strong'),darkGrid=document.createElement('div');
-      darkHeading.className='historical-pivot-dark-heading';darkHeading.textContent='유사 변곡점';
+      darkHeading.className='historical-pivot-dark-heading';darkHeading.textContent='보조 변곡점';
+      const darkDesc=document.createElement('p');
+      darkDesc.className='historical-pivot-dark-desc';
+      darkDesc.textContent='지수 기준점과 타이밍은 다소 차이가 있으나, 시장의 방향성을 조기에 예고했거나 사후에 추세를 확증해 준 의미 있는 변곡점입니다.';
       darkGrid.className='historical-indicator-result-grid historical-pivot-detail-grid';
       darkPivots.forEach(score=>appendCard(darkGrid,score.referenceType,score,true));
-      root.append(darkHeading,darkGrid);
+      root.append(darkHeading,darkDesc,darkGrid);
     }
     if(!item.storedPivots?.length&&!item.manualPivots?.length)appendDReviews(root,item);
   }
@@ -530,7 +541,12 @@
   $('historical-case-delete-confirm').addEventListener('click',confirmDeleteCase);
   const manualReasonSelect=$('historical-manual-pivot-reason');
   manualReasonSelect.add(new Option('선택 근거를 고르세요',''));
-  $('historical-manual-pivot-is-key').addEventListener('change',()=>{
+  $('historical-manual-pivot-is-key').addEventListener('change',e=>{
+    if(e.target.checked)$('historical-manual-pivot-is-verified').checked=false;
+    if(manualPivotContext)manualPivotContext.keyTouched=true;
+  });
+  $('historical-manual-pivot-is-verified').addEventListener('change',e=>{
+    if(e.target.checked)$('historical-manual-pivot-is-key').checked=false;
     if(manualPivotContext)manualPivotContext.keyTouched=true;
   });
   $('historical-manual-pivot-reference').addEventListener('change',()=>{

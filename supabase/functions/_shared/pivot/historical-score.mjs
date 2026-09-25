@@ -84,6 +84,8 @@ function classifyPivots(rows, cycle, manualKeys, observations, marketRows = []) 
     let markerStatus;
     if (pivot.isManual && pivot.keyReference) {
       markerStatus = 'confirmed';
+    } else if (pivot.isManual && pivot.isVerified) {
+      markerStatus = 'verified';
     } else if (pivot.isManual) {
       markerStatus = selectedReferences.length ? 'confirmed' : extended ? 'manual_standard' : 'reference_only';
     } else {
@@ -115,7 +117,8 @@ export function mergedPivots({automatic = [], manual = [], fallbackAutomatic = [
   const manualRows = active.map(row => {
     const rawKey = row.key_references?.[indexCode];
     const isKey = ['START', 'PEAK', 'TROUGH'].includes(rawKey);
-    const designatedReference = isKey ? rawKey : (typeof rawKey === 'string' && rawKey.endsWith('_REF')) ? rawKey.replace('_REF', '') : null;
+    const isVerified = rawKey === 'VERIFIED' || (typeof rawKey === 'string' && rawKey.endsWith('_VERIFIED'));
+    const designatedReference = isKey ? rawKey : (typeof rawKey === 'string' && rawKey.endsWith('_REF')) ? rawKey.replace('_REF', '') : (isVerified && rawKey !== 'VERIFIED') ? rawKey.replace('_VERIFIED', '') : null;
     return {
       pivotOrder: Number.MAX_SAFE_INTEGER,
       pivotDate: dateOnly(row.pivot_date),
@@ -125,7 +128,8 @@ export function mergedPivots({automatic = [], manual = [], fallbackAutomatic = [
       sourceDate: dateOnly(row.source_date),
       keyReference: isKey ? rawKey : null,
       designatedReference,
-      keySuppressed: rawKey === false || Boolean(designatedReference && !isKey),
+      isVerified,
+      keySuppressed: rawKey === false || isVerified || Boolean(designatedReference && !isKey),
       isManual: true
     };
   });
