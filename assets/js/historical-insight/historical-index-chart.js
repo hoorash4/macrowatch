@@ -5,8 +5,24 @@
     draw(target){target.useBitmapCoordinateSpace(scope=>{const x=this.view.x;if(x===null)return;const h=scope.horizontalPixelRatio,px=Math.round(x*h);if(px<0||px>scope.bitmapSize.width)return;const ctx=scope.context;ctx.save();ctx.strokeStyle=this.view.color;ctx.lineWidth=Math.max(1,h);ctx.setLineDash([3*h,3*h]);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,scope.bitmapSize.height);ctx.stroke();ctx.restore();});}
   }
   class PivotLineView {
-    constructor(chart,time,color){this.chart=chart;this.time=time;this.color=color;this.x=null;this.rendererInstance=new PivotLineRenderer(this);}
-    update(){this.x=this.chart.timeScale().timeToCoordinate(this.time);}
+    constructor(chart,time,color,timelineRows=[]){this.chart=chart;this.time=time;this.color=color;this.timelineRows=timelineRows;this.x=null;this.rendererInstance=new PivotLineRenderer(this);}
+    update(){
+      let coord=this.chart.timeScale().timeToCoordinate(this.time);
+      if(coord===null&&Array.isArray(this.timelineRows)&&this.timelineRows.length){
+        const targetMs=Date.parse(this.time);
+        if(Number.isFinite(targetMs)){
+          let closest=null,minDiff=Infinity;
+          for(let i=0;i<this.timelineRows.length;i++){
+            const rowMs=Date.parse(this.timelineRows[i]?.time);
+            if(!Number.isFinite(rowMs))continue;
+            const diff=Math.abs(rowMs-targetMs);
+            if(diff<minDiff){minDiff=diff;closest=this.timelineRows[i].time;}
+          }
+          if(closest&&minDiff<=7*86400000)coord=this.chart.timeScale().timeToCoordinate(closest);
+        }
+      }
+      this.x=coord;
+    }
     renderer(){return this.rendererInstance;}
     zOrder(){return 'top';}
   }
@@ -31,7 +47,7 @@
     zOrder(){return 'top';}
   }
   class PivotLinePrimitive {
-    constructor(chart,time,color,textColor='#fff',lane=0){this.view=new PivotLineView(chart,time,color);this.timeAxisPaneView=new PivotTimeAxisPaneView(this.view,time,color,textColor,lane);}
+    constructor(chart,time,color,textColor='#fff',lane=0,timelineRows=[]){this.view=new PivotLineView(chart,time,color,timelineRows);this.timeAxisPaneView=new PivotTimeAxisPaneView(this.view,time,color,textColor,lane);}
     updateAllViews(){this.view.update();}
     paneViews(){return [this.view];}
     timeAxisPaneViews(){return [this.timeAxisPaneView];}
@@ -231,7 +247,7 @@
         items.forEach(item=>{
           const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='verified'?1:['near_miss','overridden_key','manual_standard'].includes(result.markerStatus)?2:3, orderedPivots=[...(item.displayPivots||item.results)].sort((a,b)=>pivotPriority(a)-pivotPriority(b)), primitives=orderedPivots.map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,0);});
+          const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='verified'?1:['near_miss','overridden_key','manual_standard'].includes(result.markerStatus)?2:3, orderedPivots=[...(item.displayPivots||item.results)].sort((a,b)=>pivotPriority(a)-pivotPriority(b)), primitives=orderedPivots.map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,0,data);});
           for(const primitive of primitives)line.attachPrimitive(primitive);
           indicatorSeries.set(item.meta.code,{series:line,color,primitives,rows:item.displayRows});
         });

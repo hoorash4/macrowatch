@@ -322,7 +322,11 @@
         key_reference:sendKeyReference
       });
       indicatorRepository.clearManualPivots(context.caseCode,context.indexCode,context.seriesCode);
-      for(const code of Object.keys(indexData.indices))indicatorRepository.clearScoreRows(context.caseCode,code);
+      indicatorRepository.clearStoredPivots?.(context.caseCode,context.indexCode,context.seriesCode);
+      for(const code of Object.keys(indexData.indices)){
+        indicatorRepository.clearScoreRows(context.caseCode,code);
+        indicatorRepository.clearStoredPivots?.(context.caseCode,code,context.seriesCode);
+      }
       for(const code of Object.keys(indexData.indices))analysisCache.delete(`history:${context.caseCode}:${code}`);
       try{for(const code of Object.keys(indexData.indices))await rebuildHistoricalScores(context.caseCode,code,[context.seriesCode]);}
       catch(error){status.textContent=`변곡점은 저장됐지만 점수 갱신 실패: ${error?.message||'알 수 없는 오류'}`;return;}

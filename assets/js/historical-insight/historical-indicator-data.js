@@ -86,6 +86,7 @@
       manualPivotCache.set(key,promise);promise.catch(()=>manualPivotCache.delete(key));return promise;
     }
     function clearManualPivots(caseCode,indexCode,seriesCode){for(const code of INDEX_CODES)manualPivotCache.delete(`${caseCode}:${code}:${seriesCode}`);}
+    function clearStoredPivots(caseCode,indexCode,seriesCode){for(const code of INDEX_CODES)pivotCache.delete(`${caseCode}:${code}:${seriesCode}`);}
     async function loadScoreRows(caseCode,indexCode){
       const key=`${caseCode}:${indexCode}`;
       if(scoreCache.has(key))return scoreCache.get(key);
@@ -97,7 +98,7 @@
     }
     function clearScoreRows(caseCode,indexCode){scoreCache.delete(`${caseCode}:${indexCode}`);}
     return Object.freeze({catalog,loadVisibility,setHidden,loadCoverage,load,loadStoredPivots,loadManualPivots,
-      loadScoreRows,clearScoreRows,clearManualPivots,clearAnalysisData(){coverageCache=null;seriesCache.clear();pivotCache.clear();manualPivotCache.clear();scoreCache.clear();}});
+      loadScoreRows,clearScoreRows,clearManualPivots,clearStoredPivots,clearAnalysisData(){coverageCache=null;seriesCache.clear();pivotCache.clear();manualPivotCache.clear();scoreCache.clear();}});
   }
   window.MacroWatchHistoricalIndicators=Object.freeze({INDEX_MARKET_SCOPES,createRepository,normalize,aiAnalysis,SCORE_VERSION});
 
