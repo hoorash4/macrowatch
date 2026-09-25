@@ -486,8 +486,37 @@
       if(hasPivot){const box=document.createElement('div'),reasonLabel=document.createElement('b'),reasonText=document.createElement('p');box.className='historical-pivot-reason';reasonLabel.textContent='피봇 판정 근거';reasonText.textContent=pivotReasonFor(item,result)||'근거 미저장';box.append(reasonLabel,reasonText);card.append(box);}
       target.append(card);
     }
+    function appendVerifiedCard(target,pivot){
+      const card=document.createElement('article'),label=document.createElement('strong'),body=document.createElement('p');
+      card.classList.add('is-verified');
+      const refType=pivot.designatedReference,refDate=refType&&dates[refType]?dates[refType]:null;
+      const offset=refDate?Math.round((Date.parse(pivot.pivotDate)-Date.parse(refDate))/86400000):null;
+      const timingText=offset!==null?(offset===0?'기준점 당일':`기준점 ${Math.abs(offset)}일 ${offset<0?'전':'후'}`):'';
+      label.textContent=refType?`${refType} 확인 · ${timingText} · ${relationshipLabel(pivot.relationship||'unclear')}`
+        :`확인 변곡점 · ${pivot.pivotDate} · ${relationshipLabel(pivot.relationship||'unclear')}`;
+      body.textContent=refDate?`기준점 ${refDate}\n피봇점 ${pivot.pivotDate} · 수치 ${indicatorValue(pivot,item.meta)}`
+        :`피봇점 ${pivot.pivotDate} · 수치 ${indicatorValue(pivot,item.meta)}`;
+      card.append(label,body);
+      const reason=pivotReasonFor(item,pivot)||pivot.pivotReason||pivot.selectionReason;
+      if(reason){
+        const box=document.createElement('div'),reasonLabel=document.createElement('b'),reasonText=document.createElement('p');
+        box.className='historical-pivot-reason';reasonLabel.textContent='피봇 판정 근거';reasonText.textContent=reason;
+        box.append(reasonLabel,reasonText);card.append(box);
+      }
+      target.append(card);
+    }
     referenceOrder.forEach(type=>appendCard(grid,type,item.byReference?.[type]?.markerStatus==='confirmed'?item.byReference[type]:null,false));
     primary.append(grid);root.append(primary);
+    const verifiedPivots=(item.displayPivots||(typeof effectivePivots==='function'?effectivePivots(item,context):[])||[]).filter(pivot=>pivot.markerStatus==='verified');
+    if(verifiedPivots.length){
+      const verifiedHeading=document.createElement('strong'),verifiedDesc=document.createElement('p'),verifiedGrid=document.createElement('div');
+      verifiedHeading.className='historical-pivot-verified-heading';verifiedHeading.textContent='확인 변곡점';
+      verifiedDesc.className='historical-pivot-verified-desc';
+      verifiedDesc.textContent='핵심 기준점은 아니지만, 시장의 추세를 최종 확인시켜 주었거나 전환 신호의 신뢰성을 분명하게 확증해 준 주요 변곡점입니다.';
+      verifiedGrid.className='historical-indicator-result-grid historical-pivot-detail-grid';
+      verifiedPivots.forEach(pivot=>appendVerifiedCard(verifiedGrid,pivot));
+      root.append(verifiedHeading,verifiedDesc,verifiedGrid);
+    }
     const darkPivots=item.byReference?.LIST?.darkPivots||[];
     if(darkPivots.length){
       const darkHeading=document.createElement('strong'),darkGrid=document.createElement('div');

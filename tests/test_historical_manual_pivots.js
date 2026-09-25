@@ -513,9 +513,9 @@ test('indicator repository parses verified reference into isVerified: true and d
   assert.match(repositoryContent,/isVerified&&rawKey!=='VERIFIED'\?rawKey\.replace\('_VERIFIED',''\):null/);
 });
 
-test('chart renders verified pivots with #7b97aa',()=>{
+test('chart renders verified pivots with blue color from CSS variable',()=>{
   const chartContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-index-chart.js'),'utf8');
-  assert.match(chartContent,/verifiedStyle=\(\)=>\({\s*color:\s*'#7b97aa',\s*textColor:\s*'#fff'\s*}\)/);
+  assert.match(chartContent,/verifiedStyle=\(\)=>\({\s*color:\s*getComputedStyle\(host\)\.getPropertyValue\('--historical-verified-color'\)\.trim\(\)\|\|'#388ecb',\s*textColor:\s*'#fff'\s*}\)/);
   assert.match(chartContent,/result\.markerStatus==='verified'\?verifiedStyle\(\)/);
 });
 
@@ -524,6 +524,18 @@ test('historical insight renames near-miss section to 보조 변곡점 and adds 
   assert.match(insightContent,/darkHeading\.textContent='보조 변곡점';/);
   assert.match(insightContent,/darkDesc\.className='historical-pivot-dark-desc';/);
   assert.match(insightContent,/지수 기준점과 타이밍은 다소 차이가 있으나, 시장의 방향성을 조기에 예고했거나 사후에 추세를 확증해 준 의미 있는 변곡점입니다/);
+});
+
+test('historical insight renders 확인 변곡점 section between primary and 보조 변곡점 with description',()=>{
+  const insightContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-insight.js'),'utf8');
+  assert.match(insightContent,/verifiedHeading\.className='historical-pivot-verified-heading';verifiedHeading\.textContent='확인 변곡점';/);
+  assert.match(insightContent,/verifiedDesc\.className='historical-pivot-verified-desc';/);
+  assert.match(insightContent,/핵심 기준점은 아니지만, 시장의 추세를 최종 확인시켜 주었거나 전환 신호의 신뢰성을 분명하게 확증해 준 주요 변곡점입니다/);
+  assert.match(insightContent,/root\.append\(verifiedHeading,verifiedDesc,verifiedGrid\)/);
+  const primaryIdx=insightContent.indexOf('primary.append(grid);root.append(primary);');
+  const verifiedIdx=insightContent.indexOf('root.append(verifiedHeading,verifiedDesc,verifiedGrid);');
+  const darkIdx=insightContent.indexOf('root.append(darkHeading,darkDesc,darkGrid);');
+  assert.ok(primaryIdx>=0&&verifiedIdx>primaryIdx&&darkIdx>verifiedIdx,'확인 변곡점 section must be between primary and 보조 변곡점');
 });
 
 test('modal contains 확인 변곡점 checkbox',()=>{
