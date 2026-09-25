@@ -68,12 +68,19 @@
       const promise=window.MacroWatchFrontend.queryAll(client,'historical_indicator_manual_pivots',
         'source_date,pivot_date,pivot_value,relationship,reason,comment,key_references',
         'source_date',[['case_code',caseCode],['series_code',seriesCode]])
-        .then(rows=>Object.freeze((rows||[]).map(row=>Object.freeze({
-          sourceDate:String(row.source_date).slice(0,10),pivotDate:row.pivot_date?String(row.pivot_date).slice(0,10):null,
-          pivotValue:row.pivot_value==null?null:Number(row.pivot_value),relationship:row.relationship||null,
-          reason:row.reason||'',comment:row.comment||'',keyReference:row.key_references?.[indexCode]||null,
-          keySuppressed:row.key_references?.[indexCode]===false
-        }))));
+        .then(rows=>Object.freeze((rows||[]).map(row=>{
+          const rawKey=row.key_references?.[indexCode];
+          const isKey=['START','PEAK','TROUGH'].includes(rawKey);
+          const isNonKeyRef=typeof rawKey==='string'&&rawKey.endsWith('_REF');
+          const designatedReference=isKey?rawKey:isNonKeyRef?rawKey.replace('_REF',''):null;
+          return Object.freeze({
+            sourceDate:String(row.source_date).slice(0,10),pivotDate:row.pivot_date?String(row.pivot_date).slice(0,10):null,
+            pivotValue:row.pivot_value==null?null:Number(row.pivot_value),relationship:row.relationship||null,
+            reason:row.reason||'',comment:row.comment||'',keyReference:isKey?rawKey:null,
+            designatedReference,
+            keySuppressed:rawKey===false
+          });
+        })));
       manualPivotCache.set(key,promise);promise.catch(()=>manualPivotCache.delete(key));return promise;
     }
     function clearManualPivots(caseCode,indexCode,seriesCode){for(const code of INDEX_CODES)manualPivotCache.delete(`${caseCode}:${code}:${seriesCode}`);}

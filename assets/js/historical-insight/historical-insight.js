@@ -145,10 +145,12 @@
   }
   function manualPivotDirectionMatches(pivot,type,pivots,rows,cycle,indexRows=[]){
     if(!pivot.isManual||!['positive','inverse'].includes(pivot.relationship)||pivot.keyReference)return true;
+    if(pivot.designatedReference&&pivot.designatedReference!==type)return false;
     if(!rows?.length)return true;
     const dayDistance=(a,b)=>Math.abs(Date.parse(`${a}T00:00:00Z`)-Date.parse(`${b}T00:00:00Z`));
-    const owner=[['START',cycle.startDate],['PEAK',cycle.peakDate],['TROUGH',cycle.troughDate]]
-      .filter(([,date])=>date).sort((a,b)=>dayDistance(a[1],pivot.pivotDate)-dayDistance(b[1],pivot.pivotDate))[0]?.[0]||type;
+    const owner=pivot.designatedReference
+      ||[['START',cycle.startDate],['PEAK',cycle.peakDate],['TROUGH',cycle.troughDate]]
+        .filter(([,date])=>date).sort((a,b)=>dayDistance(a[1],pivot.pivotDate)-dayDistance(b[1],pivot.pivotDate))[0]?.[0]||type;
     const trough=cycle.troughDate,bufferEnd=trough?new Date(`${trough}T00:00:00Z`):null;
     if(bufferEnd){bufferEnd.setUTCDate(1);bufferEnd.setUTCMonth(bufferEnd.getUTCMonth()+24);bufferEnd.setUTCDate(Math.min(Number(trough.slice(8,10)),new Date(Date.UTC(bufferEnd.getUTCFullYear(),bufferEnd.getUTCMonth()+1,0)).getUTCDate()));}
     const end=owner==='START'?cycle.peakDate:owner==='PEAK'?cycle.troughDate:bufferEnd?.toISOString().slice(0,10);
@@ -176,17 +178,21 @@
     for(const [type,date] of refs){
       const window=indicatorAnalysis.relevanceWindow(date);
       const candidates=source.filter(pivot=>pivot.pivotDate>=window.from&&pivot.pivotDate<=window.to
+        &&(!pivot.designatedReference||pivot.designatedReference===type)
         &&manualPivotDirectionMatches(pivot,type,source,rows,cycle,indexRows))
         .sort((a,b)=>Number(Boolean(b.isManual))-Number(Boolean(a.isManual))||Math.abs(days(a.pivotDate,date))-Math.abs(days(b.pivotDate,date))||a.pivotDate.localeCompare(b.pivotDate)||a.pivotOrder-b.pivotOrder);
       if(candidates.length)selectedByReference.set(type,candidates[0]);
     }
     return source.map(pivot=>{
       const selectedRefs=refs.filter(([type])=>selectedByReference.get(type)===pivot).map(([type,date])=>({type,date,offsetDays:days(pivot.pivotDate,date)}));
-      const extended=refs.map(([type,date])=>({type,date,window:indicatorAnalysis.nearMissWindow(date),offsetDays:days(pivot.pivotDate,date)}))
+      const extendedRefs=pivot.designatedReference?refs.filter(([type])=>type===pivot.designatedReference):refs;
+      const extended=extendedRefs.map(([type,date])=>({type,date,window:indicatorAnalysis.nearMissWindow(date),offsetDays:days(pivot.pivotDate,date)}))
         .filter(item=>pivot.pivotDate>=item.window.from&&pivot.pivotDate<=item.window.to
           &&manualPivotDirectionMatches(pivot,item.type,source,rows,cycle,indexRows))
         .sort((a,b)=>Math.abs(a.offsetDays)-Math.abs(b.offsetDays))[0]||null;
-      const primary=selectedRefs[0]||extended;
+      const refDate=pivot.designatedReference?cycle?.[`${pivot.designatedReference.toLowerCase()}Date`]:null;
+      const designatedPrimary=pivot.designatedReference&&refDate?{type:pivot.designatedReference,date:refDate,offsetDays:days(pivot.pivotDate,refDate)}:null;
+      const primary=selectedRefs[0]||extended||designatedPrimary;
       return Object.freeze({
         ...pivot,
         selectedReferences:Object.freeze(selectedRefs),
@@ -207,6 +213,7 @@
       selectionReason:[pivot.reason,pivot.comment].filter(Boolean).join('\n'),
       pivotReason:[pivot.reason,pivot.comment].filter(Boolean).join('\n'),
       relationship:pivot.relationship,sourceDate:pivot.sourceDate,keyReference:pivot.keyReference,
+      designatedReference:pivot.designatedReference||null,
       keySuppressed:pivot.keySuppressed,isManual:true
     }))].sort((a,b)=>a.pivotDate.localeCompare(b.pivotDate));
     const classified=classifyStoredPivots(merged,cycle,item.rows,indexRows),manualKeys=new Map(active.filter(pivot=>pivot.keyReference).map(pivot=>[pivot.keyReference,pivot.sourceDate]));
@@ -215,7 +222,15 @@
       let selectedReferences=(pivot.selectedReferences||[]).filter(ref=>!pivot.keySuppressed&&(!manualKeys.has(ref.type)||pivot.sourceDate===manualKeys.get(ref.type)));
       if(pivot.isManual&&pivot.keyReference){const date=referenceDates[pivot.keyReference];selectedReferences=[{type:pivot.keyReference,date,offsetDays:date?Math.round((Date.parse(pivot.pivotDate)-Date.parse(date))/86400000):null}];}
       const overridden=pivot.markerStatus==='confirmed'&&!selectedReferences.length;
-      return Object.freeze({...pivot,selectedReferences:Object.freeze(selectedReferences),markerStatus:pivot.isManual&&!pivot.keyReference?(selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard'):overridden?'overridden_key':selectedReferences.length?'confirmed':pivot.markerStatus});
+      let markerStatus;
+      if(pivot.isManual&&pivot.designatedReference&&!pivot.keyReference){
+        markerStatus='reference_only';
+      }else if(pivot.isManual&&!pivot.keyReference){
+        markerStatus=selectedReferences.length?'confirmed':pivot.markerStatus==='reference_only'?'reference_only':'manual_standard';
+      }else{
+        markerStatus=overridden?'overridden_key':selectedReferences.length?'confirmed':pivot.markerStatus;
+      }
+      return Object.freeze({...pivot,selectedReferences:Object.freeze(selectedReferences),markerStatus});
     });
   }
   function effectivePivots(item,context){let pivots=context.mode==='history'?(item.storedPivots?.length||item.manualPivots?.length?mergeManualPivots(item,context.cycle,context.indexRows||[]):classifyStoredPivots(autoPivotRows(item),context.cycle,item.rows,context.indexRows||[])):[...(item.results||[]),...(item.nearMissPivots||[])];if(context.mode==='current'){const latest=item.evidence?.pending?{pivotDate:item.evidence.pending.candidateDate,regimeBoundaryDate:item.evidence.pending.regimeBoundaryDate,referenceType:'CURRENT_STRUCTURAL',markerStatus:item.evidence.status}:item.evidence?.result||null;pivots=[...(item.confirmedReferences||[]),...(latest?[latest]:[])];}return[...new Map(pivots.map(pivot=>[context.mode==='history'?pivot.pivotDate:`${pivot.markerStatus||''}:${pivot.referenceType||''}:${pivot.pivotDate}`,pivot])).values()];}
@@ -236,9 +251,10 @@
     const manual=(item.manualPivots||[]).find(pivot=>pivot.pivotDate===point.date);
     const automatic=(item.storedPivots?.length?item.storedPivots:autoPivotRows(item)).find(pivot=>pivot.pivotDate===point.date);
     const classified=effectivePivots(item,activeIndicatorContext).find(pivot=>pivot.pivotDate===point.date);
-    const keyReference=manual?.keyReference||classified?.selectedReferences?.[0]?.type||'';
+    const designatedReference=manual?.designatedReference||manual?.keyReference||classified?.referenceType||classified?.selectedReferences?.[0]?.type||'';
+    const isKey=manual?Boolean(manual.keyReference):classified?.markerStatus==='confirmed';
     const existing=Boolean(manual||automatic);
-    manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||point.date,item,existing,keyTouched:false,keyDecision:manual?.keyReference?'manual_on':manual?.keySuppressed?'manual_off':'auto'};
+    manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||point.date,item,existing,keyTouched:false,keyDecision:manual?.keyReference?'manual_on':manual?.designatedReference?'manual_ref':manual?.keySuppressed?'manual_off':'auto',isKey,designatedReference};
     $('historical-manual-pivot-title').textContent=`${item.meta.title} · ${existing?'변곡점 수정':'변곡점 추가'}`;
     $('historical-manual-pivot-date').value=manual?manual.pivotDate:point.date;
     $('historical-manual-pivot-relationship').value=manual?manual.relationship||'':'';
@@ -249,9 +265,9 @@
     }
     reasonSelect.value=savedReason;
     $('historical-manual-pivot-comment').value=manual?manual.comment||'':'';
-    $('historical-manual-pivot-is-key').checked=classified?.markerStatus==='confirmed';
-    $('historical-manual-pivot-reference').value=keyReference;
-    $('historical-manual-pivot-reference').disabled=!$('historical-manual-pivot-is-key').checked;
+    $('historical-manual-pivot-is-key').checked=isKey;
+    $('historical-manual-pivot-reference').value=designatedReference;
+    $('historical-manual-pivot-reference').disabled=false;
     $('historical-manual-pivot-delete').hidden=!existing;
     $('historical-manual-pivot-status').textContent=manualReasonLoadError;
     $('historical-manual-pivot-modal').hidden=false;
@@ -261,14 +277,28 @@
     const context=manualPivotContext;
     if(!isAdmin||!context||!functionClient)return;
     const status=$('historical-manual-pivot-status'),date=$('historical-manual-pivot-date').value,
-      keyReference=$('historical-manual-pivot-is-key').checked?$('historical-manual-pivot-reference').value:null,
-      keyDecision=context.keyTouched?keyReference?'manual_on':'manual_off':context.keyDecision||'auto',
+      isKey=$('historical-manual-pivot-is-key').checked,
+      selectedRef=$('historical-manual-pivot-reference').value||'',
       value=isDeleted?null:rawValueAtDate(context.item.rows,date);
-    if(!isDeleted&&(!date||!Number.isFinite(value)||$('historical-manual-pivot-is-key').checked&&!keyReference)){
+    if(!isDeleted&&(!date||!Number.isFinite(value)||(isKey&&!selectedRef))){
       status.textContent='날짜와 해당 날짜의 지표값을 확인해 주세요. 핵심 변곡점을 선택했다면 지수 기준점도 지정해 주세요.';return;
     }
-    if(!isDeleted&&keyReference&&(context.item.manualPivots||[]).some(pivot=>pivot.keyReference===keyReference&&pivot.sourceDate!==context.sourceDate)){
-      status.textContent=`이 지표의 ${keyReference} 핵심 변곡점이 이미 있습니다. 기존 지정을 관리자 화면에서 먼저 해제해 주세요.`;return;
+    if(!isDeleted&&isKey&&selectedRef&&(context.item.manualPivots||[]).some(pivot=>pivot.keyReference===selectedRef&&pivot.sourceDate!==context.sourceDate)){
+      status.textContent=`이 지표의 ${selectedRef} 핵심 변곡점이 이미 있습니다. 기존 지정을 관리자 화면에서 먼저 해제해 주세요.`;return;
+    }
+    let sendKeyReference;
+    if(isDeleted){
+      sendKeyReference=null;
+    }else if(context.keyTouched){
+      sendKeyReference=isKey?selectedRef:selectedRef?`${selectedRef}_REF`:null;
+    }else if(context.keyDecision==='manual_off'){
+      sendKeyReference=null;
+    }else if(context.keyDecision==='manual_on'||(context.isKey&&context.designatedReference)){
+      sendKeyReference=context.designatedReference;
+    }else if(context.keyDecision==='manual_ref'||(!context.isKey&&context.designatedReference)){
+      sendKeyReference=`${context.designatedReference}_REF`;
+    }else{
+      sendKeyReference='AUTO';
     }
     const save=$('historical-manual-pivot-save'),del=$('historical-manual-pivot-delete');
     save.disabled=del.disabled=true;status.textContent='저장 중';
@@ -280,7 +310,7 @@
         relationship:isDeleted?null:$('historical-manual-pivot-relationship').value||null,
         reason:isDeleted?null:$('historical-manual-pivot-reason').value||null,
         comment:isDeleted?null:$('historical-manual-pivot-comment').value||null,
-        key_reference:isDeleted?null:keyDecision==='auto'?'AUTO':keyReference
+        key_reference:sendKeyReference
       });
       indicatorRepository.clearManualPivots(context.caseCode,context.indexCode,context.seriesCode);
       for(const code of Object.keys(indexData.indices))indicatorRepository.clearScoreRows(context.caseCode,code);
@@ -436,6 +466,7 @@
     grid.className='historical-indicator-result-grid historical-pivot-detail-grid';
     const dates={START:context.cycle.startDate,PEAK:context.cycle.peakDate,TROUGH:context.cycle.troughDate};
     function appendCard(target,type,score,isDark){
+      const result=score;
       const card=document.createElement('article'),label=document.createElement('strong'),body=document.createElement('p');
       const hasPivot=Boolean(score?.pivotDate),offset=score?.offsetDays;
       card.classList.toggle('is-empty',!hasPivot);
@@ -444,7 +475,7 @@
       body.textContent=hasPivot?`기준점 ${dates[type]}\n피봇점 ${score.pivotDate} · 수치 ${indicatorValue(score,item.meta)}\n변곡 시의성 ${score.timelinessScore}점 · 관계 적합성 ${score.relationshipSuitabilityScore}점 · 추세 지속성 ${score.continuityScore}점`
         :`기준점 ${dates[type]}\n변곡 시의성 ${score?.timelinessScore??0}점 · 관계 적합성 ${score?.relationshipSuitabilityScore??0}점 · 추세 지속성 ${score?.continuityScore??0}점`;
       card.append(label,body);
-      if(hasPivot){const box=document.createElement('div'),reasonLabel=document.createElement('b'),reasonText=document.createElement('p');box.className='historical-pivot-reason';reasonLabel.textContent='피봇 판정 근거';reasonText.textContent=score.pivotReason||'근거 미저장';box.append(reasonLabel,reasonText);card.append(box);}
+      if(hasPivot){const box=document.createElement('div'),reasonLabel=document.createElement('b'),reasonText=document.createElement('p');box.className='historical-pivot-reason';reasonLabel.textContent='피봇 판정 근거';reasonText.textContent=pivotReasonFor(item,result)||'근거 미저장';box.append(reasonLabel,reasonText);card.append(box);}
       target.append(card);
     }
     referenceOrder.forEach(type=>appendCard(grid,type,item.byReference?.[type]?.markerStatus==='confirmed'?item.byReference[type]:null,false));
@@ -499,10 +530,8 @@
   $('historical-case-delete-confirm').addEventListener('click',confirmDeleteCase);
   const manualReasonSelect=$('historical-manual-pivot-reason');
   manualReasonSelect.add(new Option('선택 근거를 고르세요',''));
-  $('historical-manual-pivot-is-key').addEventListener('change',event=>{
+  $('historical-manual-pivot-is-key').addEventListener('change',()=>{
     if(manualPivotContext)manualPivotContext.keyTouched=true;
-    const reference=$('historical-manual-pivot-reference');reference.disabled=!event.target.checked;
-    if(!event.target.checked)reference.value='';
   });
   $('historical-manual-pivot-reference').addEventListener('change',()=>{
     if(manualPivotContext)manualPivotContext.keyTouched=true;

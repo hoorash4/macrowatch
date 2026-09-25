@@ -15,9 +15,11 @@ const darkWindow = date => ({from: shiftMonths(date, -6), to: shiftMonths(date, 
 
 function manualDirectionMatches(pivot, type, pivots, observations, cycle, marketRows = []) {
   if (!pivot.isManual || !['positive', 'inverse'].includes(pivot.relationship) || pivot.keyReference) return true;
+  if (pivot.designatedReference && pivot.designatedReference !== type) return false;
   if (!observations.length) return true;
-  const owner = [['START', cycle.startDate], ['PEAK', cycle.peakDate], ['TROUGH', cycle.troughDate]]
-    .filter(([, date]) => date).sort((a, b) => Math.abs(days(a[1], pivot.pivotDate)) - Math.abs(days(b[1], pivot.pivotDate)))[0]?.[0] || type;
+  const owner = pivot.designatedReference
+    || [['START', cycle.startDate], ['PEAK', cycle.peakDate], ['TROUGH', cycle.troughDate]]
+      .filter(([, date]) => date).sort((a, b) => Math.abs(days(a[1], pivot.pivotDate)) - Math.abs(days(b[1], pivot.pivotDate)))[0]?.[0] || type;
   const bufferEnd = shiftMonths(cycle.troughDate, 24);
   const end = owner === 'START' ? cycle.peakDate : owner === 'PEAK' ? cycle.troughDate : bufferEnd;
   const next = pivots.find(candidate => candidate.pivotDate > (owner === 'TROUGH' ? cycle.troughDate : pivot.pivotDate)
@@ -69,16 +71,28 @@ function classifyPivots(rows, cycle, manualKeys, observations, marketRows = []) 
       const date = cycle[`${pivot.keyReference.toLowerCase()}Date`];
       selectedReferences = [{type: pivot.keyReference, date, offsetDays: date ? days(date, pivot.pivotDate) : null}];
     }
-    const extended = refs.map(([type, date]) => ({type, date, window: darkWindow(date), offsetDays: days(date, pivot.pivotDate)}))
+    const extendedRefs = pivot.designatedReference
+      ? refs.filter(([type]) => type === pivot.designatedReference)
+      : refs;
+    const extended = extendedRefs.map(([type, date]) => ({type, date, window: darkWindow(date), offsetDays: days(date, pivot.pivotDate)}))
       .filter(ref => pivot.pivotDate >= ref.window.from && pivot.pivotDate <= ref.window.to
         && manualDirectionMatches(pivot, ref.type, rows, observations, cycle, marketRows))
       .sort((a, b) => Math.abs(a.offsetDays) - Math.abs(b.offsetDays))[0];
     const wasConfirmed = refs.some(([type]) => selected.get(type) === pivot);
     const overridden = wasConfirmed && !selectedReferences.length;
-    const markerStatus = pivot.isManual && !pivot.keyReference
+    const isManualNonKeyWithRef = pivot.isManual && pivot.designatedReference && !pivot.keyReference;
+    const markerStatus = isManualNonKeyWithRef
+      ? 'reference_only'
+      : pivot.isManual && !pivot.keyReference
       ? selectedReferences.length ? 'confirmed' : extended ? 'manual_standard' : 'reference_only'
       : overridden ? 'overridden_key' : selectedReferences.length ? 'confirmed' : extended ? 'near_miss' : 'reference_only';
-    return {...pivot, selectedReferences, markerStatus, nearReferenceType: extended?.type || null};
+    return {
+      ...pivot,
+      selectedReferences,
+      markerStatus,
+      nearReferenceType: extended?.type || null,
+      referenceType: pivot.designatedReference || selectedReferences[0]?.type || extended?.type || null
+    };
   });
 }
 
@@ -95,13 +109,24 @@ export function mergedPivots({automatic = [], manual = [], fallbackAutomatic = [
   const automaticRows = [...new Map(source.filter(row => !blocked.has(row.pivotDate) && !occupied.has(row.pivotDate))
     .map(row => [row.pivotDate, row])).values()];
   const active = manual;
-  const manualRows = active.map(row => ({
-    pivotOrder: Number.MAX_SAFE_INTEGER, pivotDate: dateOnly(row.pivot_date), pivotValue: Number(row.pivot_value),
-    pivotReason: [row.reason, row.comment].filter(Boolean).join('\n'), relationship: row.relationship,
-    sourceDate: dateOnly(row.source_date), keyReference: row.key_references?.[indexCode] || null,
-    keySuppressed: row.key_references?.[indexCode] === false, isManual: true
-  }));
-  const keys = new Map(active.filter(row => row.key_references?.[indexCode])
+  const manualRows = active.map(row => {
+    const rawKey = row.key_references?.[indexCode];
+    const isKey = ['START', 'PEAK', 'TROUGH'].includes(rawKey);
+    const designatedReference = isKey ? rawKey : (typeof rawKey === 'string' && rawKey.endsWith('_REF')) ? rawKey.replace('_REF', '') : null;
+    return {
+      pivotOrder: Number.MAX_SAFE_INTEGER,
+      pivotDate: dateOnly(row.pivot_date),
+      pivotValue: Number(row.pivot_value),
+      pivotReason: [row.reason, row.comment].filter(Boolean).join('\n'),
+      relationship: row.relationship,
+      sourceDate: dateOnly(row.source_date),
+      keyReference: isKey ? rawKey : null,
+      designatedReference,
+      keySuppressed: rawKey === false,
+      isManual: true
+    };
+  });
+  const keys = new Map(active.filter(row => row.key_references?.[indexCode] && ['START', 'PEAK', 'TROUGH'].includes(row.key_references[indexCode]))
     .map(row => [row.key_references[indexCode], dateOnly(row.source_date)]));
   return classifyPivots([...automaticRows, ...manualRows].sort((a, b) => a.pivotDate.localeCompare(b.pivotDate)), cycle, keys, observations, marketRows);
 }

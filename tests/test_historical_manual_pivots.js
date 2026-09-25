@@ -263,6 +263,9 @@ test('new automatic decisions and existing administrator key-off remain distinct
   assert.equal(sent.at(-1).key_reference,'START');
   fields['historical-manual-pivot-is-key'].checked=false;
   await persist(false);
+  assert.equal(sent.at(-1).key_reference,'START_REF');
+  fields['historical-manual-pivot-reference'].value='';
+  await persist(false);
   assert.equal(sent.at(-1).key_reference,null);
   scope.manualPivotContext.keyTouched=false;
   scope.manualPivotContext.keyDecision='manual_off';
@@ -351,7 +354,7 @@ test('deleting a pivot removes its manual row and automatic row without leaving 
 test('one case-indicator pivot set is shared while key designations stay index-specific',()=>{
   const repository=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-indicator-data.js'),'utf8');
   const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260923090000_share_historical_indicator_pivots.sql'),'utf8');
-  assert.match(controller,/loadStoredPivots\(activeCase\.code,activeCase\.primaryIndex,item\.code\)/);
+  assert.match(controller,/loadStoredPivots\(activeCase\.code,activeCase\.pivotSourceIndex,item\.code\)/);
   assert.match(controller,/catalog\(activeCode\)/);
   assert.match(controller,/loadManualPivots\(activeCase\.code,activeCode,item\.code\)/);
   assert.match(repository,/allowed\.has\(item\.marketScope\)/);
@@ -430,3 +433,53 @@ test('delete action remains hover-visible without mouse-focused rows sticking op
   assert.match(css,/\.historical-indicator-row:has\(:focus-visible\) \.historical-indicator-actions/);
   assert.doesNotMatch(css,/\.historical-indicator-row:focus-within \.historical-indicator-actions/);
 });
+
+test('a non-key manual pivot with designated reference renders reference_only (light gray)',()=>{
+  const cycle={startDate:'2022-01-05',peakDate:'2022-11-19',troughDate:'2023-06-01'};
+  const manual={sourceDate:'2022-02-15',pivotDate:'2022-02-15',pivotValue:42,relationship:'inverse',
+    reason:'관리자 선택',comment:'',keyReference:null,designatedReference:'START',isDeleted:false};
+  const result=merge({storedPivots:[],manualPivots:[manual]},cycle);
+  const target=result.find(pivot=>pivot.pivotDate==='2022-02-15');
+  assert.equal(target.markerStatus,'reference_only');
+  assert.equal(target.isManual,true);
+  assert.equal(target.designatedReference,'START');
+});
+
+test('a non-key manual pivot with designated reference does not displace a confirmed magenta key',()=>{
+  const cycle={startDate:'2022-01-05',peakDate:'2022-11-19',troughDate:'2023-06-01'};
+  const keyPivot={sourceDate:'2022-01-05',pivotDate:'2022-01-05',pivotValue:50,relationship:'positive',
+    reason:'핵심 변곡점',comment:'',keyReference:'START',designatedReference:'START',isDeleted:false};
+  const nonKeyRefPivot={sourceDate:'2022-02-15',pivotDate:'2022-02-15',pivotValue:40,relationship:'inverse',
+    reason:'참고 변곡점',comment:'',keyReference:null,designatedReference:'START',isDeleted:false};
+  const result=merge({storedPivots:[],manualPivots:[keyPivot,nonKeyRefPivot]},cycle);
+  const confirmed=result.find(pivot=>pivot.pivotDate==='2022-01-05');
+  const nonKey=result.find(pivot=>pivot.pivotDate==='2022-02-15');
+  assert.equal(confirmed.markerStatus,'confirmed');
+  assert.equal(confirmed.keyReference,'START');
+  assert.equal(nonKey.markerStatus,'reference_only');
+  assert.equal(nonKey.keyReference,null);
+  assert.equal(nonKey.designatedReference,'START');
+});
+
+test('indicator repository parses non-key reference (_REF) into designatedReference and keyReference null',()=>{
+  const repositoryContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-indicator-data.js'),'utf8');
+  assert.match(repositoryContent,/rawKey\.endsWith\('_REF'\)/);
+  assert.match(repositoryContent,/rawKey\.replace\('_REF',''\)/);
+  assert.match(repositoryContent,/keyReference:isKey\?rawKey:null/);
+});
+
+test('admin control and migration accept non-key references START_REF, PEAK_REF, TROUGH_REF',()=>{
+  const edge=fs.readFileSync(path.join(__dirname,'../supabase/functions/admin-control/index.ts'),'utf8');
+  const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260926050000_manual_pivot_non_key_reference.sql'),'utf8');
+  assert.match(edge,/\["START", "PEAK", "TROUGH", "AUTO", "START_REF", "PEAK_REF", "TROUGH_REF"\]\.includes\(keyReference\)/);
+  assert.match(migration,/p_key_reference not in \('START',\s*'PEAK',\s*'TROUGH',\s*'AUTO',\s*'START_REF',\s*'PEAK_REF',\s*'TROUGH_REF'\)/);
+  assert.match(migration,/elsif p_key_reference in \('START_REF',\s*'PEAK_REF',\s*'TROUGH_REF'\) then/);
+});
+
+test('modal keeps reference dropdown enabled when is-key is unchecked',()=>{
+  const modalHtml=fs.readFileSync(path.join(__dirname,'../historical-insight.html'),'utf8');
+  assert.doesNotMatch(modalHtml,/<select id="historical-manual-pivot-reference"[^>]*disabled/);
+  assert.match(controller,/\$\('historical-manual-pivot-reference'\)\.disabled=false;/);
+  assert.doesNotMatch(controller,/\$\('historical-manual-pivot-reference'\)\.disabled=!event\.target\.checked/);
+});
+
