@@ -415,11 +415,13 @@ test('historical detail cards read the saved scores without calculating from piv
   const start=controller.indexOf('  function renderHistoricalPivotScores('),end=controller.indexOf('  function clearIndicatorSelection(',start);
   assert.ok(start>=0&&end>start);
   const cards=[];
-  const root={hidden:false,replaceChildren(){cards.length=0;},append(...nodes){for(const node of nodes)if(node.className?.includes('historical-pivot-detail-grid'))cards.push(...node.children);}};
+  const collect=node=>{if(node.className?.includes('historical-pivot-detail-grid'))cards.push(...node.children);for(const child of node.children||[])collect(child);};
+  const root={hidden:false,replaceChildren(){cards.length=0;},append(...nodes){nodes.forEach(collect);}};
   const createElement=()=>({className:'',textContent:'',children:[],classList:{toggle(){}},append(...children){this.children.push(...children);}});
   const render=vm.runInNewContext(`${controller.slice(start,end)}\nrenderHistoricalPivotScores`,{
     $:()=>root,document:{createElement},referenceOrder:['START','PEAK','TROUGH'],
-    indicatorValue:point=>String(point.pivotValue),appendDReviews:()=>{},relationshipLabel:relation=>relation
+    indicatorValue:point=>String(point.pivotValue),appendDReviews:()=>{},relationshipLabel:relation=>relation,
+    pivotReasonFor:(item,result)=>result?.pivotReason||''
   });
   const score=(date,value)=>({pivotDate:date,pivotValue:value,offsetDays:0,relationship:'positive',
     timelinessScore:100,relationshipSuitabilityScore:100,continuityScore:100,score:100,pivotReason:'저장된 근거'});
