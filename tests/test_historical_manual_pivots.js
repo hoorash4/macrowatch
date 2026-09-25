@@ -513,29 +513,31 @@ test('indicator repository parses verified reference into isVerified: true and d
   assert.match(repositoryContent,/isVerified&&rawKey!=='VERIFIED'\?rawKey\.replace\('_VERIFIED',''\):null/);
 });
 
-test('chart renders verified pivots with blue color from CSS variable',()=>{
+test('chart renders quasi-core pivots with blue color and verified pivots with gray color from CSS variable',()=>{
   const chartContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-index-chart.js'),'utf8');
-  assert.match(chartContent,/verifiedStyle=\(\)=>\({\s*color:\s*getComputedStyle\(host\)\.getPropertyValue\('--historical-verified-color'\)\.trim\(\)\|\|'#5a92bb',\s*textColor:\s*'#fff'\s*}\)/);
+  assert.match(chartContent,/nearMissStyle=\(\)=>\({\s*color:\s*getComputedStyle\(host\)\.getPropertyValue\('--historical-quasi-core-color'\)\.trim\(\)\|\|'#5a92bb',\s*textColor:\s*'#fff'\s*}\)/);
+  assert.match(chartContent,/verifiedStyle=\(\)=>\({\s*color:\s*getComputedStyle\(host\)\.getPropertyValue\('--historical-verified-color'\)\.trim\(\)\|\|\(document\.documentElement\.dataset\.theme==='dark'\?'#475569':'#64748b'\),\s*textColor:\s*'#fff'\s*}\)/);
   assert.match(chartContent,/result\.markerStatus==='verified'\?verifiedStyle\(\)/);
+  assert.match(chartContent,/\['near_miss','overridden_key','manual_standard'\]\.includes\(result\.markerStatus\)\?nearMissStyle\(\)/);
 });
 
-test('historical insight renames near-miss section to 보조 변곡점 and adds description',()=>{
+test('historical insight renames near-miss section to 준핵심 변곡점 and adds description',()=>{
   const insightContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-insight.js'),'utf8');
-  assert.match(insightContent,/darkHeading\.textContent='보조 변곡점';/);
+  assert.match(insightContent,/darkHeading\.textContent='준핵심 변곡점';/);
   assert.match(insightContent,/darkDesc\.className='historical-pivot-dark-desc';/);
   assert.match(insightContent,/지수 기준점과 타이밍은 다소 차이가 있으나, 시장의 방향성을 조기에 예고했거나 사후에 추세를 확증해 준 의미 있는 변곡점입니다/);
 });
 
-test('historical insight renders 확인 변곡점 section between primary and 보조 변곡점 with description',()=>{
+test('historical insight renders 준핵심 변곡점 section before 확인 변곡점 with description',()=>{
   const insightContent=fs.readFileSync(path.join(__dirname,'../assets/js/historical-insight/historical-insight.js'),'utf8');
+  assert.match(insightContent,/darkHeading\.className='historical-pivot-dark-heading';darkHeading\.textContent='준핵심 변곡점';/);
   assert.match(insightContent,/verifiedHeading\.className='historical-pivot-verified-heading';verifiedHeading\.textContent='확인 변곡점';/);
   assert.match(insightContent,/verifiedDesc\.className='historical-pivot-verified-desc';/);
   assert.match(insightContent,/핵심 기준점은 아니지만, 시장의 추세를 최종 확인시켜 주었거나 전환 신호의 신뢰성을 분명하게 확증해 준 주요 변곡점입니다/);
-  assert.match(insightContent,/root\.append\(verifiedHeading,verifiedDesc,verifiedGrid\)/);
   const primaryIdx=insightContent.indexOf('primary.append(grid);root.append(primary);');
-  const verifiedIdx=insightContent.indexOf('root.append(verifiedHeading,verifiedDesc,verifiedGrid);');
   const darkIdx=insightContent.indexOf('root.append(darkHeading,darkDesc,darkGrid);');
-  assert.ok(primaryIdx>=0&&verifiedIdx>primaryIdx&&darkIdx>verifiedIdx,'확인 변곡점 section must be between primary and 보조 변곡점');
+  const verifiedIdx=insightContent.indexOf('root.append(verifiedHeading,verifiedDesc,verifiedGrid);');
+  assert.ok(primaryIdx>=0&&darkIdx>primaryIdx&&verifiedIdx>darkIdx,'준핵심 변곡점 section must be before 확인 변곡점');
 });
 
 test('modal contains 확인 변곡점 checkbox',()=>{

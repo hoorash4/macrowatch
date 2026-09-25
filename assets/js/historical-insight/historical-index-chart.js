@@ -50,8 +50,8 @@
     const updateLine = () => series?.applyOptions({ color: lineColor() });
     const referenceColor=type=>getComputedStyle(host).getPropertyValue(`--historical-${type.toLowerCase()}-color`).trim();
     const referenceOnlyStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-near-miss-color').trim()||'#cbd5e1',textColor:getComputedStyle(host).getPropertyValue('--historical-near-miss-text').trim()||'#475569'});
-    const nearMissStyle=()=>({color:document.documentElement.dataset.theme==='dark'?'#475569':'#64748b',textColor:'#fff'});
-    const verifiedStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-verified-color').trim()||'#5a92bb',textColor:'#fff'});
+    const nearMissStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-quasi-core-color').trim()||'#5a92bb',textColor:'#fff'});
+    const verifiedStyle=()=>({color:getComputedStyle(host).getPropertyValue('--historical-verified-color').trim()||(document.documentElement.dataset.theme==='dark'?'#475569':'#64748b'),textColor:'#fff'});
     const pivotStyle=(result,color)=>result.markerStatus==='verified'?verifiedStyle():['near_miss','overridden_key','manual_standard'].includes(result.markerStatus)?nearMissStyle():result.markerStatus==='reference_only'?referenceOnlyStyle():{color,textColor:'#fff'};
     const displayValue=value=>window.MacroWatchFrontend.formatDisplayNumber(value);
     function isoDate(time) {
@@ -231,7 +231,7 @@
         items.forEach(item=>{
           const color=indicatorColor,line=chart.addLineSeries({priceScaleId:'left',color,lineWidth:3,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'',priceFormat:{type:'custom',minMove:.1,formatter:value=>`${Math.round(value)}`}});
           line.setData(item.displayRows);
-          const pivotPriority=result=>result.markerStatus==='reference_only'?0:['near_miss','overridden_key','manual_standard'].includes(result.markerStatus)?1:result.markerStatus==='verified'?2:3, orderedPivots=[...(item.displayPivots||item.results)].sort((a,b)=>pivotPriority(a)-pivotPriority(b)), primitives=orderedPivots.map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,0);});
+          const pivotPriority=result=>result.markerStatus==='reference_only'?0:result.markerStatus==='verified'?1:['near_miss','overridden_key','manual_standard'].includes(result.markerStatus)?2:3, orderedPivots=[...(item.displayPivots||item.results)].sort((a,b)=>pivotPriority(a)-pivotPriority(b)), primitives=orderedPivots.map(result=>{const style=pivotStyle(result,color);return new PivotLinePrimitive(chart,result.pivotDate,style.color,style.textColor,0);});
           for(const primitive of primitives)line.attachPrimitive(primitive);
           indicatorSeries.set(item.meta.code,{series:line,color,primitives,rows:item.displayRows});
         });

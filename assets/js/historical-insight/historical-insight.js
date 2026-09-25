@@ -507,6 +507,17 @@
     }
     referenceOrder.forEach(type=>appendCard(grid,type,item.byReference?.[type]?.markerStatus==='confirmed'?item.byReference[type]:null,false));
     primary.append(grid);root.append(primary);
+    const darkPivots=item.byReference?.LIST?.darkPivots||[];
+    if(darkPivots.length){
+      const darkHeading=document.createElement('strong'),darkGrid=document.createElement('div');
+      darkHeading.className='historical-pivot-dark-heading';darkHeading.textContent='준핵심 변곡점';
+      const darkDesc=document.createElement('p');
+      darkDesc.className='historical-pivot-dark-desc';
+      darkDesc.textContent='지수 기준점과 타이밍은 다소 차이가 있으나, 시장의 방향성을 조기에 예고했거나 사후에 추세를 확증해 준 의미 있는 변곡점입니다.';
+      darkGrid.className='historical-indicator-result-grid historical-pivot-detail-grid';
+      darkPivots.forEach(score=>appendCard(darkGrid,score.referenceType,score,true));
+      root.append(darkHeading,darkDesc,darkGrid);
+    }
     const verifiedPivots=(item.displayPivots||(typeof effectivePivots==='function'?effectivePivots(item,context):[])||[]).filter(pivot=>pivot.markerStatus==='verified');
     if(verifiedPivots.length){
       const verifiedHeading=document.createElement('strong'),verifiedDesc=document.createElement('p'),verifiedGrid=document.createElement('div');
@@ -516,17 +527,6 @@
       verifiedGrid.className='historical-indicator-result-grid historical-pivot-detail-grid';
       verifiedPivots.forEach(pivot=>appendVerifiedCard(verifiedGrid,pivot));
       root.append(verifiedHeading,verifiedDesc,verifiedGrid);
-    }
-    const darkPivots=item.byReference?.LIST?.darkPivots||[];
-    if(darkPivots.length){
-      const darkHeading=document.createElement('strong'),darkGrid=document.createElement('div');
-      darkHeading.className='historical-pivot-dark-heading';darkHeading.textContent='보조 변곡점';
-      const darkDesc=document.createElement('p');
-      darkDesc.className='historical-pivot-dark-desc';
-      darkDesc.textContent='지수 기준점과 타이밍은 다소 차이가 있으나, 시장의 방향성을 조기에 예고했거나 사후에 추세를 확증해 준 의미 있는 변곡점입니다.';
-      darkGrid.className='historical-indicator-result-grid historical-pivot-detail-grid';
-      darkPivots.forEach(score=>appendCard(darkGrid,score.referenceType,score,true));
-      root.append(darkHeading,darkDesc,darkGrid);
     }
     if(!item.storedPivots?.length&&!item.manualPivots?.length)appendDReviews(root,item);
   }

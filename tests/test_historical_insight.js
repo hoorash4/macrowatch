@@ -206,7 +206,7 @@ test('historical pivot cards place their status stripe on the top edge only', ()
   const css=read('assets/css/historical-insight.css');
   assert.match(css,/\.historical-pivot-detail-grid article \{[^}]*border-left:0; border-top:3px solid var\(--historical-indicator-color\)/);
   assert.match(css,/\.historical-pivot-detail-grid article\.is-empty \{ border-top-color:var\(--theme-border\)/);
-  assert.match(css,/\.historical-pivot-detail-grid article\.is-dark \{ border-top-color:var\(--historical-near-miss-color\)/);
+  assert.match(css,/\.historical-pivot-detail-grid article\.is-dark \{ border-top-color:var\(--historical-quasi-core-color\)/);
   assert.match(css,/\.historical-indicator-result-grid article \{[^}]*border-left: 3px solid/);
 });
 test('analysis tabs separate current regime from the historical case list and enlarge their labels', () => {
