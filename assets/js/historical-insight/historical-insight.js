@@ -251,14 +251,15 @@
     if(!isAdmin||activeMode!=='history'||!functionClient||!activeIndicatorContext)return;
     const item=activeIndicatorContext.analyses.find(candidate=>candidate.meta.code===point.code);
     if(!item)return;
-    const manual=(item.manualPivots||[]).find(pivot=>pivot.pivotDate===point.date);
-    const automatic=(item.storedPivots?.length?item.storedPivots:autoPivotRows(item)).find(pivot=>pivot.pivotDate===point.date);
-    const classified=effectivePivots(item,activeIndicatorContext).find(pivot=>pivot.pivotDate===point.date);
-    const designatedReference=manual?.designatedReference||manual?.keyReference||classified?.referenceType||classified?.selectedReferences?.[0]?.type||'';
-    const isKey=manual?Boolean(manual.keyReference):classified?.markerStatus==='confirmed';
-    const isVerified=Boolean(manual?.isVerified);
+    const targetDate=String(point.date||'').slice(0,10);
+    const manual=(item.manualPivots||[]).find(pivot=>String(pivot.pivotDate||'').slice(0,10)===targetDate);
+    const automatic=(item.storedPivots?.length?item.storedPivots:autoPivotRows(item)).find(pivot=>String(pivot.pivotDate||'').slice(0,10)===targetDate);
+    const classified=effectivePivots(item,activeIndicatorContext).find(pivot=>String(pivot.pivotDate||'').slice(0,10)===targetDate);
+    const designatedReference=manual?.designatedReference||manual?.keyReference||classified?.designatedReference||classified?.referenceType||classified?.selectedReferences?.[0]?.type||'';
+    const isKey=manual?.keySuppressed?false:Boolean(manual?.keyReference||classified?.markerStatus==='confirmed');
+    const isVerified=!isKey&&Boolean(manual?.isVerified||classified?.markerStatus==='verified');
     const existing=Boolean(manual||automatic);
-    manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||point.date,item,existing,keyTouched:false,keyDecision:manual?.keyReference?'manual_on':manual?.isVerified?'manual_verified':manual?.designatedReference?'manual_ref':manual?.keySuppressed?'manual_off':'auto',isKey,isVerified,designatedReference};
+    manualPivotContext={caseCode:activeCase.code,indexCode:activeCode,seriesCode:point.code,sourceDate:manual?.sourceDate||targetDate,item,existing,keyTouched:false,keyDecision:manual?.keyReference?'manual_on':manual?.isVerified?'manual_verified':manual?.designatedReference?'manual_ref':manual?.keySuppressed?'manual_off':'auto',isKey,isVerified,designatedReference};
     $('historical-manual-pivot-title').textContent=`${item.meta.title} · ${existing?'변곡점 수정':'변곡점 추가'}`;
     $('historical-manual-pivot-date').value=manual?manual.pivotDate:point.date;
     $('historical-manual-pivot-relationship').value=manual?manual.relationship||'':'';
@@ -341,13 +342,18 @@
     const pivots=effectivePivots(item,context),darkStatuses=new Set(['near_miss','overridden_key','manual_standard']);
     const anchors=referenceOrder.filter(type=>pivots.some(pivot=>{
       const references=Array.isArray(pivot.selectedReferences)?pivot.selectedReferences.map(ref=>ref.type):[pivot.referenceType];
-      return !darkStatuses.has(pivot.markerStatus)&&pivot.markerStatus!=='reference_only'&&references.includes(type);
+      return !darkStatuses.has(pivot.markerStatus)&&pivot.markerStatus!=='reference_only'&&pivot.markerStatus!=='verified'&&references.includes(type);
     }));
     const dates={START:context.cycle?.startDate,PEAK:context.cycle?.peakDate,TROUGH:context.cycle?.troughDate};
     const nearMisses=referenceOrder.filter(type=>{
       if(!dates[type])return false;
       const window=indicatorAnalysis.nearMissWindow(dates[type]);
-      return pivots.some(pivot=>darkStatuses.has(pivot.markerStatus)&&(!pivot.designatedReference||pivot.designatedReference===type)&&pivot.pivotDate>=window.from&&pivot.pivotDate<=window.to);
+      return pivots.some(pivot=>{
+        if(!darkStatuses.has(pivot.markerStatus))return false;
+        if(pivot.pivotDate<window.from||pivot.pivotDate>window.to)return false;
+        const targetRef=pivot.designatedReference||pivot.referenceType;
+        return targetRef===type;
+      });
     });
     return{anchors,nearMisses};
   }

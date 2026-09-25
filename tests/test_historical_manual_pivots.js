@@ -546,3 +546,39 @@ test('modal contains 확인 변곡점 checkbox',()=>{
   assert.match(html,/확인 변곡점/);
 });
 
+test('modal checks confirmed or verified checkbox when opened for respective pivot type',()=>{
+  const from=controller.indexOf('  function openManualPivotModal(');
+  const to=controller.indexOf('  async function persistManualPivot(',from);
+  assert.ok(from>=0&&to>from);
+  const fields=Object.fromEntries(['historical-manual-pivot-title','historical-manual-pivot-date',
+    'historical-manual-pivot-relationship','historical-manual-pivot-reason','historical-manual-pivot-comment',
+    'historical-manual-pivot-is-key','historical-manual-pivot-is-verified','historical-manual-pivot-reference',
+    'historical-manual-pivot-delete','historical-manual-pivot-status','historical-manual-pivot-modal']
+    .map(id=>[id,{value:'',checked:false,hidden:true,focus(){}}]));
+  const item={meta:{code:'TEST',title:'테스트 지표'},storedPivots:[],manualPivots:[]};
+  const scope={isAdmin:true,activeMode:'history',functionClient:{},activeIndicatorContext:{analyses:[item]},
+    activeCase:{code:'case'},activeCode:'SP500',$:id=>fields[id],manualPivotContext:null,
+    manualReasonLoadError:'',autoPivotRows:()=>[],effectivePivots:()=>[
+      {pivotDate:'2022-01-05',markerStatus:'confirmed',selectedReferences:[{type:'START'}]},
+      {pivotDate:'2022-05-10',markerStatus:'verified',referenceType:'PEAK'}
+    ]};
+  const open=vm.runInNewContext(`${controller.slice(from,to)}\nopenManualPivotModal`,scope);
+  open({code:'TEST',date:'2022-01-05'});
+  assert.equal(fields['historical-manual-pivot-is-key'].checked,true);
+  assert.equal(fields['historical-manual-pivot-is-verified'].checked,false);
+
+  open({code:'TEST',date:'2022-05-10'});
+  assert.equal(fields['historical-manual-pivot-is-key'].checked,false);
+  assert.equal(fields['historical-manual-pivot-is-verified'].checked,true);
+});
+
+test('indicatorBadgeSummary does not assign multiple reference badges to a single pivot without designated reference',()=>{
+  const item={storedPivots:[],manualPivots:[
+    {sourceDate:'2022-06-01',pivotDate:'2022-06-01',pivotValue:1,reason:'관리자 선택',keyReference:null,isDeleted:false}
+  ],byReference:{LIST:{darkPivots:[{referenceType:'PEAK'}]}}};
+  const summary=badges(item,{mode:'history',cycle:{startDate:'2022-01-05',peakDate:'2022-11-19',troughDate:'2023-06-01'}});
+  assert.deepEqual(Array.from(summary.anchors),[]);
+  assert.deepEqual(Array.from(summary.nearMisses),['PEAK']);
+});
+
+
