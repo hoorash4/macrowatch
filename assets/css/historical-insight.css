@@ -138,7 +138,7 @@ html[data-theme="dark"] .historical-cycle-editor button { background: #d1a55d; c
 .historical-reference-badge[data-reference="START"] { background:var(--historical-start-color); }
 .historical-reference-badge[data-reference="PEAK"] { background:var(--historical-peak-color); }
 .historical-reference-badge[data-reference="TROUGH"] { background:var(--historical-trough-color); }
-.historical-reference-badge.is-near-miss { background:var(--historical-near-miss-color); color:var(--historical-near-miss-text); }
+.historical-reference-badge.is-near-miss { background:var(--historical-quasi-core-color); color:var(--historical-quasi-core-text); }
 .historical-indicator-empty,.historical-indicator-note { margin: 0; padding: 9px 7px; color: var(--theme-text-muted); font-size: 11px; line-height: 1.55; }
 .historical-indicator-note { border-radius: 7px; background: rgba(192,38,211,.07); color: #a21caf; }
 .historical-cycle-signal { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid rgba(22,163,74,.25); background: rgba(22,163,74,.08); }
