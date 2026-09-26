@@ -1345,7 +1345,7 @@
         const reasonText = document.createElement('p');
         box.className = 'historical-pivot-reason';
         reasonLabel.textContent = '피봇 판정 근거';
-        reasonText.textContent = pivotReasonFor(item, result) || '근거 미저장';
+        reasonText.textContent = pivotReasonFor(item,result) || '근거 미저장';
         box.append(reasonLabel, reasonText);
         card.append(box);
       }
@@ -1780,7 +1780,7 @@
     const input = $('historical-current-name-input');
     output.textContent = '저장 중';
     try {
-      const saved = await caseRepository.saveCurrentName(currentSource?.code || null, input.value, currentUser.id);
+      const saved = await caseRepository.saveCurrentName(currentSource?.code||null, input.value, currentUser.id);
       if (currentSource) {
         cases = await caseRepository.load();
       } else {
