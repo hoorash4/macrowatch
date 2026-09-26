@@ -57,6 +57,7 @@ function classifyPivots(rows, cycle, manualKeys, observations, marketRows = []) 
   for (const [type, date] of refs) {
     const window = coreWindow(date);
     const candidates = rows.filter(pivot => pivot.pivotDate >= window.from && pivot.pivotDate <= window.to
+      && pivot.designatedReference !== 'UNCLEAR'
       && (!pivot.designatedReference || pivot.designatedReference === type)
       && manualDirectionMatches(pivot, type, rows, observations, cycle, marketRows))
       .sort((a, b) => Number(Boolean(b.isManual)) - Number(Boolean(a.isManual))
@@ -72,9 +73,11 @@ function classifyPivots(rows, cycle, manualKeys, observations, marketRows = []) 
       const date = cycle[`${pivot.keyReference.toLowerCase()}Date`];
       selectedReferences = [{type: pivot.keyReference, date, offsetDays: date ? days(date, pivot.pivotDate) : null}];
     }
-    const extendedRefs = pivot.designatedReference
-      ? refs.filter(([type]) => type === pivot.designatedReference)
-      : refs;
+    const extendedRefs = pivot.designatedReference === 'UNCLEAR'
+      ? []
+      : pivot.designatedReference
+        ? refs.filter(([type]) => type === pivot.designatedReference)
+        : refs;
     const extended = extendedRefs.map(([type, date]) => ({type, date, window: darkWindow(date), offsetDays: days(date, pivot.pivotDate)}))
       .filter(ref => pivot.pivotDate >= ref.window.from && pivot.pivotDate <= ref.window.to
         && manualDirectionMatches(pivot, ref.type, rows, observations, cycle, marketRows))
@@ -82,7 +85,9 @@ function classifyPivots(rows, cycle, manualKeys, observations, marketRows = []) 
     const wasConfirmed = refs.some(([type]) => selected.get(type) === pivot);
     const overridden = wasConfirmed && !selectedReferences.length;
     let markerStatus;
-    if (pivot.isManual && pivot.keyReference) {
+    if (pivot.designatedReference === 'UNCLEAR') {
+      markerStatus = pivot.isVerified ? 'verified' : 'reference_only';
+    } else if (pivot.isManual && pivot.keyReference) {
       markerStatus = 'confirmed';
     } else if (pivot.isManual) {
       if (selectedReferences.length) {
@@ -126,18 +131,24 @@ export function mergedPivots({automatic = [], manual = [], fallbackAutomatic = [
     const isVerified = rawKey === 'VERIFIED' || (typeof rawKey === 'string' && rawKey.endsWith('_VERIFIED')) || hasAnyVerified;
     const isKey = ['START', 'PEAK', 'TROUGH'].includes(rawKey) || (typeof rawKey === 'string' && ['START_VERIFIED', 'PEAK_VERIFIED', 'TROUGH_VERIFIED'].includes(rawKey));
     const keyReference = isKey ? String(rawKey).replace('_VERIFIED', '') : null;
-    const designatedReference = keyReference || ((typeof rawKey === 'string' && rawKey.endsWith('_REF')) ? rawKey.replace('_REF', '') : (isVerified && rawKey !== 'VERIFIED' && typeof rawKey === 'string' && rawKey.endsWith('_VERIFIED')) ? rawKey.replace('_VERIFIED', '') : null);
+    const isUnclear = rawKey === 'UNCLEAR' || rawKey === 'UNCLEAR_VERIFIED';
+    const isNonKeyRef = typeof rawKey === 'string' && rawKey.endsWith('_REF');
+    const isVerifiedRef = typeof rawKey === 'string' && rawKey !== 'VERIFIED' && rawKey.endsWith('_VERIFIED') && !isUnclear;
+    const designatedReference = keyReference || (isNonKeyRef ? rawKey.replace('_REF', '') : isVerifiedRef ? rawKey.replace('_VERIFIED', '') : isUnclear ? 'UNCLEAR' : null);
+    const override = row.index_overrides?.[indexCode] || {};
+    const relationship = override.relationship || row.relationship;
+    const reason = override.reason || [row.reason, row.comment].filter(Boolean).join('\n');
     return {
       pivotOrder: Number.MAX_SAFE_INTEGER,
       pivotDate: dateOnly(row.pivot_date),
       pivotValue: Number(row.pivot_value),
-      pivotReason: [row.reason, row.comment].filter(Boolean).join('\n'),
-      relationship: row.relationship,
+      pivotReason: reason,
+      relationship: relationship,
       sourceDate: dateOnly(row.source_date),
       keyReference: keyReference,
       designatedReference,
       isVerified,
-      keySuppressed: rawKey === false || (!isKey && isVerified) || Boolean(designatedReference && !isKey),
+      keySuppressed: rawKey === false || isUnclear || (!isKey && isVerified) || Boolean(designatedReference && !isKey),
       isManual: true
     };
   });

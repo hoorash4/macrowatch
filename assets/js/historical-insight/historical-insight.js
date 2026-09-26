@@ -618,6 +618,7 @@
     for (const [type, date] of refs) {
       const window = indicatorAnalysis.relevanceWindow(date);
       const candidates = source.filter(pivot => pivot.pivotDate >= window.from && pivot.pivotDate <= window.to
+        && pivot.designatedReference !== 'UNCLEAR'
         && (!pivot.designatedReference || pivot.designatedReference === type)
         && manualPivotDirectionMatches(pivot, type, source, rows, cycle, indexRows))
         .sort((a, b) => Number(Boolean(b.isManual)) - Number(Boolean(a.isManual))
@@ -630,7 +631,9 @@
     return source.map(pivot => {
       const selectedRefs = refs.filter(([type]) => selectedByReference.get(type) === pivot)
         .map(([type, date]) => ({ type, date, offsetDays: days(pivot.pivotDate, date) }));
-      const extendedRefs = pivot.designatedReference ? refs.filter(([type]) => type === pivot.designatedReference) : refs;
+      const extendedRefs = pivot.designatedReference === 'UNCLEAR'
+        ? []
+        : (pivot.designatedReference ? refs.filter(([type]) => type === pivot.designatedReference) : refs);
       const extended = extendedRefs.map(([type, date]) => ({
         type,
         date,
@@ -641,7 +644,7 @@
           && manualPivotDirectionMatches(pivot, item.type, source, rows, cycle, indexRows))
         .sort((a, b) => Math.abs(a.offsetDays) - Math.abs(b.offsetDays))[0] || null;
 
-      const refDate = pivot.designatedReference ? cycle?.[`${pivot.designatedReference.toLowerCase()}Date`] : null;
+      const refDate = pivot.designatedReference && pivot.designatedReference !== 'UNCLEAR' ? cycle?.[`${pivot.designatedReference.toLowerCase()}Date`] : null;
       const designatedPrimary = pivot.designatedReference && refDate ? { type: pivot.designatedReference, date: refDate, offsetDays: days(pivot.pivotDate, refDate) } : null;
       const primary = selectedRefs[0] || extended || designatedPrimary;
 
@@ -698,7 +701,9 @@
 
     return classified.map(pivot => {
       let selectedReferences = (pivot.selectedReferences || []).filter(ref => !pivot.keySuppressed && (!manualKeys.has(ref.type) || pivot.sourceDate === manualKeys.get(ref.type)));
-      if (pivot.isManual && pivot.keyReference) {
+      if (pivot.designatedReference === 'UNCLEAR') {
+        selectedReferences = [];
+      } else if (pivot.isManual && pivot.keyReference) {
         const date = referenceDates[pivot.keyReference];
         selectedReferences = [{
           type: pivot.keyReference,
@@ -708,7 +713,9 @@
       }
       const overridden = pivot.markerStatus === 'confirmed' && !selectedReferences.length;
       let markerStatus;
-      if (pivot.isManual && pivot.keyReference) {
+      if (pivot.designatedReference === 'UNCLEAR') {
+        markerStatus = pivot.isVerified ? 'verified' : 'reference_only';
+      } else if (pivot.isManual && pivot.keyReference) {
         markerStatus = 'confirmed';
       } else if (pivot.isManual) {
         if (selectedReferences.length) {
@@ -785,8 +792,8 @@
     const automatic = (item.storedPivots?.length ? item.storedPivots : autoPivotRows(item)).find(pivot => String(pivot.pivotDate || '').slice(0, 10) === targetDate);
     const classified = effectivePivots(item, activeIndicatorContext).find(pivot => String(pivot.pivotDate || '').slice(0, 10) === targetDate);
 
-    const designatedReference = manual?.designatedReference || manual?.keyReference || classified?.designatedReference || classified?.referenceType || classified?.selectedReferences?.[0]?.type || '';
-    const isKey = manual?.keySuppressed ? false : Boolean(manual?.keyReference || classified?.markerStatus === 'confirmed');
+    const designatedReference = manual?.designatedReference || manual?.keyReference || (classified?.designatedReference === 'UNCLEAR' ? 'UNCLEAR' : classified?.referenceType || classified?.selectedReferences?.[0]?.type || '');
+    const isKey = (manual?.keySuppressed || designatedReference === 'UNCLEAR') ? false : Boolean(manual?.keyReference || classified?.markerStatus === 'confirmed');
     const isVerified = Boolean(manual?.isVerified || classified?.markerStatus === 'verified');
     const existing = Boolean(manual || automatic);
 
@@ -840,11 +847,13 @@
     const selectedRef = $('historical-manual-pivot-reference').value || '';
     const value = isDeleted ? null : rawValueAtDate(context.item.rows, date);
 
-    if (!isDeleted && (!date || !Number.isFinite(value) || (isKey && !selectedRef))) {
-      status.textContent = '날짜와 해당 날짜의 지표값을 확인해 주세요. 핵심 변곡점을 선택했다면 지수 기준점도 지정해 주세요.';
+    if (!isDeleted && (!date || !Number.isFinite(value) || (isKey && (!selectedRef || selectedRef === 'UNCLEAR')))) {
+      status.textContent = isKey && selectedRef === 'UNCLEAR'
+        ? '불명확 기준점은 핵심 변곡점으로 지정할 수 없습니다.'
+        : '날짜와 해당 날짜의 지표값을 확인해 주세요. 핵심 변곡점을 선택했다면 지수 기준점(START, PEAK, TROUGH)을 지정해 주세요.';
       return;
     }
-    if (!isDeleted && isKey && selectedRef && (context.item.manualPivots || []).some(pivot => pivot.keyReference === selectedRef && pivot.sourceDate !== context.sourceDate)) {
+    if (!isDeleted && isKey && selectedRef && selectedRef !== 'UNCLEAR' && (context.item.manualPivots || []).some(pivot => pivot.keyReference === selectedRef && pivot.sourceDate !== context.sourceDate)) {
       status.textContent = `이 지표의 ${selectedRef} 핵심 변곡점이 이미 있습니다. 기존 지정을 관리자 화면에서 먼저 해제해 주세요.`;
       return;
     }
@@ -852,6 +861,8 @@
     let sendKeyReference;
     if (isDeleted) {
       sendKeyReference = null;
+    } else if (selectedRef === 'UNCLEAR') {
+      sendKeyReference = isVerified ? 'UNCLEAR_VERIFIED' : 'UNCLEAR';
     } else if (context.keyTouched) {
       sendKeyReference=isKey&&isVerified&&selectedRef?`${selectedRef}_VERIFIED`:isKey?selectedRef:isVerified?(selectedRef?`${selectedRef}_VERIFIED`:'VERIFIED'):selectedRef?`${selectedRef}_REF`:null;
     } else if (context.keyDecision === 'manual_off') {
@@ -1704,12 +1715,18 @@
 
   $('historical-manual-pivot-is-key').addEventListener('change', () => {
     if (manualPivotContext) manualPivotContext.keyTouched = true;
+    if ($('historical-manual-pivot-is-key').checked && $('historical-manual-pivot-reference').value === 'UNCLEAR') {
+      $('historical-manual-pivot-reference').value = '';
+    }
   });
   $('historical-manual-pivot-is-verified').addEventListener('change', () => {
     if (manualPivotContext) manualPivotContext.keyTouched = true;
   });
   $('historical-manual-pivot-reference').addEventListener('change', () => {
     if (manualPivotContext) manualPivotContext.keyTouched = true;
+    if ($('historical-manual-pivot-reference').value === 'UNCLEAR') {
+      $('historical-manual-pivot-is-key').checked = false;
+    }
   });
   $('historical-manual-pivot-close').addEventListener('click', closeManualPivotModal);
   $('historical-manual-pivot-cancel').addEventListener('click', closeManualPivotModal);

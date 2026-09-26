@@ -485,7 +485,7 @@ test('indicator repository parses non-key reference (_REF) into designatedRefere
 test('admin control and migration accept non-key references and verified references',()=>{
   const edge=fs.readFileSync(path.join(__dirname,'../supabase/functions/admin-control/index.ts'),'utf8');
   const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20260926061500_manual_pivot_verified_status.sql'),'utf8');
-  assert.match(edge,/\["START", "PEAK", "TROUGH", "AUTO", "START_REF", "PEAK_REF", "TROUGH_REF", "VERIFIED", "START_VERIFIED", "PEAK_VERIFIED", "TROUGH_VERIFIED"\]\.includes\(keyReference\)/);
+  assert.match(edge,/\["START",\s*"PEAK",\s*"TROUGH",\s*"AUTO",\s*"START_REF",\s*"PEAK_REF",\s*"TROUGH_REF",\s*"VERIFIED",\s*"START_VERIFIED",\s*"PEAK_VERIFIED",\s*"TROUGH_VERIFIED",\s*"UNCLEAR",\s*"UNCLEAR_VERIFIED"\]\.includes\(keyReference\)/);
   assert.match(migration,/p_key_reference not in \('START',\s*'PEAK',\s*'TROUGH',\s*'AUTO',\s*'START_REF',\s*'PEAK_REF',\s*'TROUGH_REF',\s*'VERIFIED',\s*'START_VERIFIED',\s*'PEAK_VERIFIED',\s*'TROUGH_VERIFIED'\)/);
   assert.match(migration,/elsif p_key_reference in \('START_REF',\s*'PEAK_REF',\s*'TROUGH_REF',\s*'VERIFIED',\s*'START_VERIFIED',\s*'PEAK_VERIFIED',\s*'TROUGH_VERIFIED'\) then/);
 });
@@ -664,6 +664,31 @@ test('indicator repository parses combined key-verified and shares verified stat
 test('persistManualPivot generates combined key-verified reference when both key and verified are checked',()=>{
   assert.match(controller,/sendKeyReference=isKey&&isVerified&&selectedRef\?`\$\{selectedRef\}_VERIFIED`:/);
 });
+
+test('modal HTML contains UNCLEAR 불명확 reference option and is synchronized with key checkbox',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../historical-insight.html'),'utf8');
+  assert.match(html,/<option value="UNCLEAR">불명확<\/option>/);
+  assert.match(controller,/\$\('historical-manual-pivot-reference'\)\.value === 'UNCLEAR'/);
+  assert.match(controller,/status\.textContent = isKey && selectedRef === 'UNCLEAR'/);
+});
+
+test('a manual pivot with UNCLEAR reference renders reference_only or verified without becoming key or quasi-core',()=>{
+  const cycle={startDate:'2022-01-01',peakDate:'2022-06-01',troughDate:'2022-12-01'};
+  const unclearPivot={sourceDate:'2022-06-01',pivotDate:'2022-06-01',pivotValue:10,
+    reason:'불명확 테스트',comment:'',keyReference:null,isVerified:false,designatedReference:'UNCLEAR',isDeleted:false};
+  const result=merge({storedPivots:[],manualPivots:[unclearPivot]},cycle);
+  const target=result.find(p=>p.pivotDate==='2022-06-01');
+  assert.equal(target.markerStatus,'reference_only');
+  assert.equal(target.selectedReferences.length,0);
+
+  const unclearVerifiedPivot={sourceDate:'2022-06-01',pivotDate:'2022-06-01',pivotValue:10,
+    reason:'불명확 확인 테스트',comment:'',keyReference:null,isVerified:true,designatedReference:'UNCLEAR',isDeleted:false};
+  const verifiedResult=merge({storedPivots:[],manualPivots:[unclearVerifiedPivot]},cycle);
+  const verifiedTarget=verifiedResult.find(p=>p.pivotDate==='2022-06-01');
+  assert.equal(verifiedTarget.markerStatus,'verified');
+  assert.equal(verifiedTarget.selectedReferences.length,0);
+});
+
 
 
 

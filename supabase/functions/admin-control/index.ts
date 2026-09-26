@@ -259,7 +259,7 @@ export default {
         if (!isDeleted && (!pivotDate || !Number.isFinite(pivotValue)
           || (relationship !== null && !["positive", "inverse", "unclear"].includes(relationship))
           || (reason?.length || 0) > 250 || (comment?.length || 0) > 1000
-          || (keyReference !== null && !["START", "PEAK", "TROUGH", "AUTO", "START_REF", "PEAK_REF", "TROUGH_REF", "VERIFIED", "START_VERIFIED", "PEAK_VERIFIED", "TROUGH_VERIFIED"].includes(keyReference)))) {
+          || (keyReference !== null && !["START", "PEAK", "TROUGH", "AUTO", "START_REF", "PEAK_REF", "TROUGH_REF", "VERIFIED", "START_VERIFIED", "PEAK_VERIFIED", "TROUGH_VERIFIED", "UNCLEAR", "UNCLEAR_VERIFIED"].includes(keyReference)))) {
           return json({ error: "피봇 입력값을 확인해 주세요." }, 400, origin);
         }
         const { error } = await admin.rpc("save_historical_indicator_manual_pivot", {
