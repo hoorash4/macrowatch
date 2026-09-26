@@ -105,6 +105,53 @@ test('changing only the reference dropdown marks the choice as a manual decision
   assert.equal(scope.manualPivotContext.keyTouched,true);
 });
 
+test('changing reference dropdown automatically updates is-key based on core relevance window', () => {
+  const from = controller.indexOf("  $('historical-manual-pivot-is-key').addEventListener('change'");
+  const to = controller.indexOf("  $('historical-manual-pivot-close').addEventListener", from);
+  assert.ok(from >= 0 && to > from);
+
+  const listeners = {};
+  const fields = {
+    'historical-manual-pivot-is-key': { checked: true },
+    'historical-manual-pivot-reference': { value: 'PEAK' },
+    'historical-manual-pivot-date': { value: '2015-12-29' }
+  };
+  const cycle = { startDate: '2012-09-13', peakDate: '2015-05-21', troughDate: '2016-02-11' };
+  const scope = {
+    manualPivotContext: { keyTouched: false, cycle },
+    indicatorAnalysis: {
+      relevanceWindow: (date) => date === '2015-05-21'
+        ? { from: '2015-02-21', to: '2015-06-21' }
+        : { from: '2015-11-11', to: '2016-03-11' }
+    },
+    $: (id) => ({
+      ...(fields[id] || {}),
+      addEventListener: (_event, listener) => { listeners[id] = listener; },
+      set checked(val) { fields[id].checked = val; },
+      get checked() { return fields[id].checked; },
+      get value() { return fields[id].value; }
+    })
+  };
+
+  vm.runInNewContext(controller.slice(from, to), scope);
+
+  // 2015-12-29 is outside PEAK window -> is-key becomes false
+  fields['historical-manual-pivot-reference'].value = 'PEAK';
+  listeners['historical-manual-pivot-reference']();
+  assert.equal(fields['historical-manual-pivot-is-key'].checked, false);
+
+  // 2015-12-29 is inside TROUGH window -> is-key becomes true
+  fields['historical-manual-pivot-reference'].value = 'TROUGH';
+  listeners['historical-manual-pivot-reference']();
+  assert.equal(fields['historical-manual-pivot-is-key'].checked, true);
+
+  // UNCLEAR -> is-key becomes false
+  fields['historical-manual-pivot-reference'].value = 'UNCLEAR';
+  listeners['historical-manual-pivot-reference']();
+  assert.equal(fields['historical-manual-pivot-is-key'].checked, false);
+});
+
+
 test('an automatic key remains unchanged when no manual key claims its reference',()=>{
   const result=merge({storedPivots:[auto('2022-01-05',0)],manualPivots:[]},{startDate:'2022-01-05'});
   assert.equal(result[0].markerStatus,'confirmed');
@@ -727,3 +774,18 @@ test('unchecking verified sends is_verified: false and clears verified status ac
   assert.equal(isVerified, false);
   assert.match(controller, /is_verified:\s*isVerified/);
 });
+
+test('an undecided AUTO manual pivot within core window qualifies as confirmed key pivot', () => {
+  const cycle = { startDate: '2022-01-05', peakDate: '2022-07-20', troughDate: '2022-10-08' };
+  const autoPivot = {
+    sourceDate: '2022-01-20', pivotDate: '2022-01-20', pivotValue: -0.434,
+    relationship: null, reason: '자동 계산 대상 피봇', comment: '', keyReference: null,
+    keySuppressed: false, isDeleted: false
+  };
+  const result = merge({ storedPivots: [], manualPivots: [autoPivot] }, cycle);
+  const eligible = result.find(p => p.pivotDate === '2022-01-20');
+  assert.equal(eligible.markerStatus, 'confirmed');
+  assert.equal(eligible.selectedReferences[0]?.type, 'START');
+  assert.equal(eligible.offsetDays, 15);
+});
+
