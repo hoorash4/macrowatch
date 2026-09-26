@@ -1,70 +1,52 @@
-import {
-  ANALYSIS_POLICY,
-  coreWindow,
-  darkWindow,
-  days,
-  dateOnly,
-  shiftMonths
-} from './historical-score-store.ts';
-
-const TIMELINESS_WEIGHT = 40;
-const RELATIONSHIP_WEIGHT = 30;
-const CONTINUITY_WEIGHT = 30;
-
-function valueAtDate(rows, date) {
-  const exact = rows.find(row => dateOnly(row.observation_date) === date);
-  if (exact) return Number(exact.value);
-  const right = rows.findIndex(row => dateOnly(row.observation_date) > date);
-  const before = rows[right - 1];
-  const after = rows[right];
-  if (!before || !after) return null;
-  const from = Date.parse(`${dateOnly(before.observation_date)}T00:00:00Z`);
-  const to = Date.parse(`${dateOnly(after.observation_date)}T00:00:00Z`);
-  const at = Date.parse(`${date}T00:00:00Z`);
-  return Number(before.value) + (Number(after.value) - Number(before.value)) * (at - from) / (to - from);
+export const SCORE_VERSION = 'historical-pivot-4-3-3-v12';
+const DAY = 86400000;
+const dateOnly = value => String(value || '').slice(0, 10);
+const day = value => Math.floor(Date.parse(`${dateOnly(value)}T00:00:00Z`) / DAY);
+const days = (from, to) => day(to) - day(from);
+export function shiftMonths(value, amount) {
+  const [year, month, date] = dateOnly(value).split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1 + amount, 1));
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(date, last));
+  return target.toISOString().slice(0, 10);
 }
+const coreWindow = date => ({from: shiftMonths(date, -3), to: shiftMonths(date, 1)});
+const darkWindow = date => ({from: shiftMonths(date, -6), to: shiftMonths(date, 2)});
 
-function manualDirectionMatches(pivot, type, pivots, rows, cycle, marketRows = []) {
+function manualDirectionMatches(pivot, type, pivots, observations, cycle, marketRows = []) {
   if (!pivot.isManual || !['positive', 'inverse'].includes(pivot.relationship) || pivot.keyReference) return true;
   if (pivot.designatedReference && pivot.designatedReference !== type) return false;
-  if (!rows?.length) return true;
-
-  const dayDistance = (a, b) => Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`));
+  if (!observations.length) return true;
   const owner = pivot.designatedReference
     || [['START', cycle.startDate], ['PEAK', cycle.peakDate], ['TROUGH', cycle.troughDate]]
-      .filter(([, date]) => date)
-      .sort((a, b) => dayDistance(a[1], pivot.pivotDate) - dayDistance(b[1], pivot.pivotDate))[0]?.[0]
-    || type;
-
-  const end = owner === 'START' ? cycle.peakDate : owner === 'PEAK' ? cycle.troughDate : shiftMonths(cycle.troughDate, 24);
+      .filter(([, date]) => date).sort((a, b) => Math.abs(days(a[1], pivot.pivotDate)) - Math.abs(days(b[1], pivot.pivotDate)))[0]?.[0] || type;
+  const bufferEnd = shiftMonths(cycle.troughDate, 24);
+  const end = owner === 'START' ? cycle.peakDate : owner === 'PEAK' ? cycle.troughDate : bufferEnd;
   const nextPivotStart = owner === 'TROUGH' ? (pivot.pivotDate > cycle.troughDate ? pivot.pivotDate : cycle.troughDate) : pivot.pivotDate;
   const next = pivots.find(candidate => candidate.pivotDate > nextPivotStart && candidate.pivotDate <= end);
-  const to = next?.pivotDate || (owner === 'TROUGH' ? [...rows].reverse().find(row => dateOnly(row.observation_date) <= end) : null);
-  const toDate = typeof to === 'string' ? to : to ? dateOnly(to.observation_date) : end;
-  if (!toDate || toDate <= pivot.pivotDate) return false;
-
-  const fromValue = valueAtDate(rows, pivot.pivotDate);
-  const toValue = valueAtDate(rows, toDate);
+  const to = next?.pivotDate || (owner === 'TROUGH' ? lastObservationDate(observations, bufferEnd) : end);
+  if (!to || to <= pivot.pivotDate) return false;
+  const fromValue = valueAt(observations, pivot.pivotDate), toValue = valueAt(observations, to);
   if (!Number.isFinite(fromValue) || !Number.isFinite(toValue)) return false;
-
   let direction = Math.sign(toValue - fromValue);
   if (!direction) {
     const previous = [...pivots].reverse().find(candidate => candidate.pivotDate < pivot.pivotDate);
     direction = previous ? Math.sign(fromValue - previous.pivotValue) : 0;
   }
   if (!direction) return true;
-
-  const expected = owner === 'TROUGH' && marketRows.length
-    ? indexDirection(marketRows, cycle.troughDate, toDate)
+  const expected = owner === 'TROUGH' ? marketDirection(marketRows, cycle.troughDate, to)
     : owner === 'PEAK' ? -1 : 1;
   if (!expected) return false;
-
   return direction === (pivot.relationship === 'positive' ? expected : -expected);
 }
 
-function indexDirection(marketRows, from, to) {
-  const start = marketRows.find(row => dateOnly(row.market_date) === from);
-  const finish = [...marketRows].reverse().find(row => dateOnly(row.market_date) <= to);
+function lastObservationDate(rows, end) {
+  return [...rows].reverse().find(row => dateOnly(row.observation_date) <= end)?.observation_date?.slice(0, 10) || null;
+}
+function marketDirection(rows, from, to) {
+  if (!rows.length) return 1;
+  const start = rows.find(row => dateOnly(row.market_date) === from);
+  const finish = [...rows].reverse().find(row => dateOnly(row.market_date) <= to);
   return start && finish && dateOnly(finish.market_date) > from
     ? Math.sign(Number(finish.close) - Number(start.close)) : 0;
 }
@@ -146,10 +128,10 @@ export function mergedPivots({automatic = [], manual = [], fallbackAutomatic = [
   const manualRows = active.map(row => {
     const rawKey = row.key_references?.[indexCode];
     const hasAnyVerified = Object.values(row.key_references || {}).some(val => val === 'VERIFIED' || (typeof val === 'string' && val.endsWith('_VERIFIED')));
+    const isVerified = rawKey === 'VERIFIED' || (typeof rawKey === 'string' && rawKey.endsWith('_VERIFIED')) || hasAnyVerified;
+    const isKey = ['START', 'PEAK', 'TROUGH'].includes(rawKey) || (typeof rawKey === 'string' && ['START_VERIFIED', 'PEAK_VERIFIED', 'TROUGH_VERIFIED'].includes(rawKey));
+    const keyReference = isKey ? String(rawKey).replace('_VERIFIED', '') : null;
     const isUnclear = rawKey === 'UNCLEAR' || rawKey === 'UNCLEAR_VERIFIED';
-    const isVerified = Boolean(row.is_verified || rawKey === 'VERIFIED' || (typeof rawKey === 'string' && rawKey.endsWith('_VERIFIED')) || (!row.key_references && hasAnyVerified));
-    const isKey = typeof rawKey === 'string' && ['START', 'PEAK', 'TROUGH'].includes(rawKey.replace('_VERIFIED', '')) && !rawKey.endsWith('_REF') && !isUnclear;
-    const keyReference = isKey ? rawKey.replace('_VERIFIED', '') : null;
     const isNonKeyRef = typeof rawKey === 'string' && rawKey.endsWith('_REF');
     const isVerifiedRef = typeof rawKey === 'string' && rawKey !== 'VERIFIED' && rawKey.endsWith('_VERIFIED') && !isUnclear;
     const designatedReference = keyReference || (isNonKeyRef ? rawKey.replace('_REF', '') : isVerifiedRef ? rawKey.replace('_VERIFIED', '') : isUnclear ? 'UNCLEAR' : null);
@@ -191,107 +173,96 @@ function timeliness(referenceDate, pivot) {
 function referencePivot(pivots, type, date) {
   const magenta = pivots.find(pivot => pivot.markerStatus === 'confirmed' && pivot.selectedReferences.some(ref => ref.type === type));
   if (magenta) return magenta;
-  return pivots.filter(pivot => ['near_miss', 'manual_standard'].includes(pivot.markerStatus) && (pivot.referenceType === type || pivot.nearReferenceType === type))
-    .sort((a, b) => timeliness(date, b) - timeliness(date, a) || Math.abs(days(date, a.pivotDate)) - Math.abs(days(date, b.pivotDate)))[0] || null;
+  return pivots.filter(pivot => ['near_miss', 'overridden_key', 'manual_standard'].includes(pivot.markerStatus) && timeliness(date, pivot) > 0)
+    .sort((a, b) => timeliness(date, b) - timeliness(date, a))[0] || null;
 }
-function relationshipSuitability(referenceDate, nextReferenceDate, pivot, rows, cycle, marketRows = []) {
-  if (!pivot) return 0;
-  if (pivot.relationship === 'unclear') return 0;
-  const windowDays = Math.max(1, days(referenceDate, nextReferenceDate));
-  const pivotDays = days(referenceDate, pivot.pivotDate);
-  const startDay = pivotDays < 0 ? pivotDays : 0;
-  const length = Math.max(1, windowDays - startDay);
-  let correctDays = 0;
-  const points = [{date: referenceDate, value: valueAtDate(rows, referenceDate)},
-    ...rows.filter(row => dateOnly(row.observation_date) > referenceDate && dateOnly(row.observation_date) <= nextReferenceDate)
-      .map(row => ({date: dateOnly(row.observation_date), value: Number(row.value)}))];
-  const direction = pivot.relationship === 'positive' ? 1 : -1;
-  for (let i = 0; i < points.length - 1; i++) {
-    const span = Math.max(0, days(points[i].date, points[i + 1].date));
-    const delta = points[i + 1].value - points[i].value;
-    if (Math.sign(delta) === direction) correctDays += span;
-    else if (delta === 0) correctDays += span * .5;
+const intermediates = (pivots, from, to) => pivots.filter(pivot => pivot.markerStatus === 'reference_only' && pivot.pivotDate > from && pivot.pivotDate < to)
+  .sort((a, b) => a.pivotDate.localeCompare(b.pivotDate));
+function valueAt(rows, date) {
+  const exact = rows.find(row => dateOnly(row.observation_date) === date);
+  if (exact) return Number(exact.value);
+  const right = rows.findIndex(row => dateOnly(row.observation_date) > date);
+  if (right < 1) return null;
+  const before = rows[right - 1], after = rows[right];
+  const a = day(before.observation_date), b = day(after.observation_date);
+  return Number(before.value) + (Number(after.value) - Number(before.value)) * (day(date) - a) / (b - a);
+}
+function relationship({pivots, rows, from, to, benchmarkEnd, expectedDirection, factor, manualRelationship, startingPivot}) {
+  const totalDays = days(from, benchmarkEnd);
+  if (totalDays <= 0 || !factor || manualRelationship === 'unclear') return {relationship: manualRelationship || 'unclear', score: 0};
+  const coveredFrom = startingPivot?.pivotDate || from;
+  if (coveredFrom >= to) return {relationship: manualRelationship || 'unclear', score: 0};
+  const points = [coveredFrom, ...intermediates(pivots, coveredFrom, to).map(pivot => pivot.pivotDate), to];
+  const segments = [];
+  for (let i = 1; i < points.length; i++) {
+    const a = valueAt(rows, points[i - 1]), b = valueAt(rows, points[i]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return {relationship: 'unclear', score: 0};
+    segments.push({direction: Math.sign(b - a), days: days(points[i - 1], points[i])});
   }
-  return Math.min(100, Math.floor(100 * correctDays / length));
-}
-function continuity(referenceDate, nextReferenceDate, pivot, pivots, rows) {
-  if (!pivot) return 0;
-  const benchmarkDays = Math.max(1, days(referenceDate, nextReferenceDate));
-  const intermediates = pivots.filter(point => point.pivotDate > pivot.pivotDate && point.pivotDate < nextReferenceDate);
-  const boundary = intermediates[0]?.pivotDate || nextReferenceDate;
-  const earnedDays = Math.max(0, days(pivot.pivotDate, boundary));
-  const rawScore = Math.floor(100 * earnedDays / benchmarkDays);
-  return ['near_miss', 'overridden_key', 'manual_standard'].includes(pivot.markerStatus) ? Math.floor(rawScore * .5) : rawScore;
-}
-function compositeScore(timelinessScore, relationshipScore, continuityScore) {
-  return Math.floor((timelinessScore * TIMELINESS_WEIGHT + relationshipScore * RELATIONSHIP_WEIGHT + continuityScore * CONTINUITY_WEIGHT) / 100);
+  const startValue = valueAt(rows, coveredFrom);
+  const priorPivots = pivots.filter(pivot => pivot.pivotDate < coveredFrom)
+    .sort((a, b) => b.pivotDate.localeCompare(a.pivotDate));
+  const entryDirection = priorPivots.map(pivot => Math.sign(startValue - pivot.pivotValue))
+    .find(direction => direction) || 0;
+  const savedDirection = manualRelationship === 'positive' ? expectedDirection
+    : manualRelationship === 'inverse' ? -expectedDirection : 0;
+  const totals = {up: 0, down: 0};
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    let direction = segment.direction;
+    if (!direction) direction = segments.slice(0, i).reverse().find(value => value.direction)?.direction
+      || entryDirection || savedDirection;
+    if (direction > 0) totals.up += segment.days * (segment.direction ? 1 : .5);
+    if (direction < 0) totals.down += segment.days * (segment.direction ? 1 : .5);
+  }
+  const matching = expectedDirection > 0 ? totals.up : totals.down;
+  const opposing = expectedDirection > 0 ? totals.down : totals.up;
+  const automatic = matching === opposing ? 'unclear' : matching > opposing ? 'positive' : 'inverse';
+  const relation = manualRelationship || automatic;
+  const aligned = relation === 'positive' ? matching : relation === 'inverse' ? opposing : 0;
+  return {relationship: relation, score: Math.floor(100 * Math.min(1, aligned / totalDays) * factor)};
 }
 
-export function scoreReferences({pivots = [], rows = [], cycle, marketRows = []}) {
-  const result = {};
-  const references = [
-    {type: 'START', date: cycle.startDate, nextDate: cycle.peakDate},
-    {type: 'PEAK', date: cycle.peakDate, nextDate: cycle.troughDate},
-    {type: 'TROUGH', date: cycle.troughDate, nextDate: shiftMonths(cycle.troughDate, 24)}
-  ];
-  let totalScore = 0;
-  let count = 0;
-  for (const ref of references) {
-    if (!ref.date) {
-      result[ref.type] = {
-        score: 0, timelinessScore: 0, relationshipSuitabilityScore: 0, continuityScore: 0,
-        pivotDate: null, pivotValue: null, relationship: 'unclear', markerStatus: null, offsetDays: null
-      };
-      continue;
-    }
-    const pivot = referencePivot(pivots, ref.type, ref.date);
-    if (!pivot) {
-      result[ref.type] = {
-        score: 0, timelinessScore: 0, relationshipSuitabilityScore: 0, continuityScore: 0,
-        pivotDate: null, pivotValue: null, relationship: 'unclear', markerStatus: null, offsetDays: null
-      };
-      continue;
-    }
-    const timelinessScore = timeliness(ref.date, pivot);
-    const relationshipScore = relationshipSuitability(ref.date, ref.nextDate, pivot, rows, cycle, marketRows);
-    const continuityScore = continuity(ref.date, ref.nextDate, pivot, pivots, rows);
-    const score = compositeScore(timelinessScore, relationshipScore, continuityScore);
-    result[ref.type] = {
-      score,
-      timelinessScore,
-      relationshipSuitabilityScore: relationshipScore,
-      continuityScore,
-      pivotDate: pivot.pivotDate,
-      pivotValue: pivot.pivotValue,
-      relationship: pivot.relationship || 'unclear',
-      markerStatus: pivot.markerStatus,
-      offsetDays: days(ref.date, pivot.pivotDate)
-    };
-    totalScore += score;
-    count += 1;
+export function scoreReferences({pivots, rows, cycle, marketRows = []}) {
+  const dates = {START: cycle.startDate, PEAK: cycle.peakDate, TROUGH: cycle.troughDate};
+  if (!dates.START || !dates.PEAK || !dates.TROUGH) return {START: null, PEAK: null, TROUGH: null};
+  const selected = Object.fromEntries(Object.entries(dates).map(([type, date]) => [type, referencePivot(pivots, type, date)]));
+  const bufferEnd = shiftMonths(dates.TROUGH, 24), result = {};
+  function scorePivot(type, pivot) {
+    const from = dates[type], benchmarkEnd = type === 'START' ? dates.PEAK : type === 'PEAK' ? dates.TROUGH : bufferEnd;
+    const firstAfterTrough = type === 'TROUGH' ? pivots.filter(candidate => candidate.pivotDate > (pivot?.pivotDate > from ? pivot.pivotDate : from)
+      && candidate.pivotDate <= bufferEnd).sort((a, b) => a.pivotDate.localeCompare(b.pivotDate))[0] : null;
+    const to = type === 'TROUGH' ? firstAfterTrough?.pivotDate || lastObservationDate(rows, bufferEnd) : benchmarkEnd;
+    const factor = pivot?.markerStatus === 'confirmed' ? 1 : pivot ? .5 : 0;
+    const relation = pivot ? relationship({pivots, rows, from, to, benchmarkEnd: type === 'TROUGH' ? to : benchmarkEnd,
+      expectedDirection: type === 'TROUGH' ? marketDirection(marketRows, from, to) : type === 'PEAK' ? -1 : 1,
+      factor, manualRelationship: pivot.isManual ? pivot.relationship : null,
+      startingPivot: pivot})
+      : {relationship: 'unclear', score: 0};
+    const continuityStart = type === 'TROUGH' ? from : pivot?.pivotDate;
+    const next = pivot ? intermediates(pivots, continuityStart, benchmarkEnd)[0] : null;
+    const total = continuityStart ? days(continuityStart, benchmarkEnd) : 0;
+    const active = pivot ? Math.max(0, days(continuityStart, next?.pivotDate || benchmarkEnd)) : 0;
+    const continuity = pivot && total > 0 ? Math.floor(100 * Math.min(1, active / total) * (pivot.markerStatus === 'confirmed' ? 1 : .5)) : 0;
+    const timing = timeliness(from, pivot);
+    return {referenceDate: from, pivotDate: pivot?.pivotDate || null, pivotValue: pivot?.pivotValue ?? null,
+      markerStatus: pivot?.markerStatus || null, offsetDays: pivot ? days(from, pivot.pivotDate) : null,
+      relationship: relation.relationship, timelinessScore: timing, relationshipSuitabilityScore: relation.score,
+      continuityScore: continuity, score: Math.floor(timing * .4 + relation.score * .3 + continuity * .3),
+      pivotReason: pivot?.pivotReason || ''};
   }
-  const darkPivots = pivots.filter(pivot => ['near_miss', 'manual_standard'].includes(pivot.markerStatus))
-    .map(pivot => {
-      const ref = references.find(item => item.type === (pivot.referenceType || pivot.nearReferenceType)) || references[0];
-      const timelinessScore = timeliness(ref.date, pivot);
-      const relationshipScore = relationshipSuitability(ref.date, ref.nextDate, pivot, rows, cycle, marketRows);
-      const continuityScore = continuity(ref.date, ref.nextDate, pivot, pivots, rows);
-      return {
-        score: compositeScore(timelinessScore, relationshipScore, continuityScore),
-        timelinessScore,
-        relationshipSuitabilityScore: relationshipScore,
-        continuityScore,
-        pivotDate: pivot.pivotDate,
-        pivotValue: pivot.pivotValue,
-        relationship: pivot.relationship || 'unclear',
-        markerStatus: pivot.markerStatus,
-        offsetDays: ref.date ? days(ref.date, pivot.pivotDate) : null,
-        referenceType: ref.type
-      };
-    });
-  result.LIST = {
-    score: count ? Math.floor(totalScore / count) : 0,
-    darkPivots
-  };
+  for (const type of ['START', 'PEAK', 'TROUGH']) result[type] = scorePivot(type, selected[type]);
+  const weights = {START: 150, PEAK: 200, TROUGH: 150};
+  const darkPivots = pivots.filter(pivot => ['near_miss', 'overridden_key', 'manual_standard'].includes(pivot.markerStatus)
+    && pivot.nearReferenceType && timeliness(dates[pivot.nearReferenceType], pivot) > 0)
+    .map(pivot => ({referenceType: pivot.nearReferenceType, ...scorePivot(pivot.nearReferenceType, pivot)}));
+  const placementScore = Object.keys(weights).reduce((total, type) => total + (result[type].markerStatus === 'confirmed'
+    ? weights[type] : result[type].pivotDate ? weights[type] / 2 : 0), 0);
+  const pivotScore = Object.keys(weights).reduce((total, type) => total + result[type].score, 0);
+  const extraDarkTieBreak = darkPivots.reduce((total, pivot) => total + (selected[pivot.referenceType]?.pivotDate === pivot.pivotDate
+    ? 0 : weights[pivot.referenceType] / 2 + pivot.score), 0);
+  const rawScore = placementScore + pivotScore;
+  result.LIST = {score: Math.round(rawScore / 800 * 100), rawScore, placementScore, pivotScore,
+    extraDarkTieBreak, darkPivots};
   return result;
 }
