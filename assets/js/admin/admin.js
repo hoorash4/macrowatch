@@ -2,10 +2,24 @@
   const db = window.MacroWatchFrontend.createSupabaseClient();
   const { escapeHtml, formatDisplayNumber } = window.MacroWatchFrontend;
   const functionClient = window.MacroWatchFrontend.createFunctionClient(db);
+
   const WORKFLOW_CONTROLS = {
-    backup: { button: 'run-backup-button', badge: 'backup-badge', action: 'run_backup', idleLabel: '지금 수동 백업', success: '수동 백업이 완료되었습니다.' },
-    news: { button: 'run-news-button', badge: 'news-badge', action: 'run_news', idleLabel: '뉴스 분석 테스트', success: '뉴스 분석 테스트가 완료되었습니다. 결과는 저장하지 않았습니다.' },
+    backup: {
+      button: 'run-backup-button',
+      badge: 'backup-badge',
+      action: 'run_backup',
+      idleLabel: '지금 수동 백업',
+      success: '수동 백업이 완료되었습니다.'
+    },
+    news: {
+      button: 'run-news-button',
+      badge: 'news-badge',
+      action: 'run_news',
+      idleLabel: '뉴스 분석 테스트',
+      success: '뉴스 분석 테스트가 완료되었습니다. 결과는 저장하지 않았습니다.'
+    },
   };
+
   let adminCardOrder = null;
   let aiModelSelection = null;
   let aiModelRequest = 0;
@@ -18,7 +32,6 @@
       timeZone: 'Asia/Seoul'
     }).format(new Date(value));
   }
-
 
   function showNotice(title, message, isError = false) {
     document.getElementById('operation-title').textContent = title;
@@ -60,7 +73,9 @@
     document.querySelectorAll('[data-admin-tab-panel]').forEach((panel) => {
       panel.classList.toggle('hidden', panel.dataset.adminTabPanel !== selected);
     });
-    try { sessionStorage.setItem('macrowatch-admin-tab', selected); } catch (_) {}
+    try {
+      sessionStorage.setItem('macrowatch-admin-tab', selected);
+    } catch (_) {}
   }
 
   function initializeAdminTabs() {
@@ -125,9 +140,17 @@
       description.textContent = result.choices.length > 1
         ? '현재 모델과 그 이후에 나온 같은 등급의 모델입니다.'
         : '현재 모델 이후의 같은 등급 모델이 없습니다.';
-      options.innerHTML = result.choices.map((choice) => `<label class="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-white"><input type="radio" name="ai-model-choice" value="${escapeHtml(choice.id)}" ${choice.current ? 'checked' : ''} class="accent-indigo-500"><span class="font-mono">${escapeHtml(choice.id)}</span>${choice.current ? '<span class="ml-auto text-xs text-slate-400">현재</span>' : ''}</label>`).join('');
+      options.innerHTML = result.choices.map((choice) => (
+        `<label class="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-white">` +
+        `<input type="radio" name="ai-model-choice" value="${escapeHtml(choice.id)}" ${choice.current ? 'checked' : ''} class="accent-indigo-500">` +
+        `<span class="font-mono">${escapeHtml(choice.id)}</span>` +
+        `${choice.current ? '<span class="ml-auto text-xs text-slate-400">현재</span>' : ''}` +
+        `</label>`
+      )).join('');
     } catch (error) {
-      if (requestId === aiModelRequest && !modal.classList.contains('hidden')) description.textContent = error.message || '모델 목록을 불러오지 못했습니다.';
+      if (requestId === aiModelRequest && !modal.classList.contains('hidden')) {
+        description.textContent = error.message || '모델 목록을 불러오지 못했습니다.';
+      }
     }
   }
 
@@ -145,18 +168,22 @@
       return;
     }
     closeAiModelModal();
-    try { await loadAiModels(); } catch { /* The saved model is still active; the card shows its read error. */ }
+    try {
+      await loadAiModels();
+    } catch {
+      // The saved model is still active; the card shows its read error.
+    }
     showNotice('모델 교체 완료', `${modelId} 모델이 이후 분석에 적용됩니다.`);
   }
-
-  window.MacroWatchAdminApi = Object.freeze({ invoke: invokeAdmin, notice: showNotice, setListAttentionCount });
 
   // 긴 관리 목록은 동일한 접기 UI를 사용한다. 목록 자체의 id는 유지해 각 기능과 분리한다.
   function initializeCollapsibleLists() {
     const labels = {
-      'policy-review-list': 'FOMC 검토 목록', 'sector-etf-list': '섹터 ETF 목록',
+      'policy-review-list': 'FOMC 검토 목록',
+      'sector-etf-list': '섹터 ETF 목록',
       'extreme-news-rule-list': '결정적 뉴스 기준 목록',
-      'earnings-v2-pending-list': '기업 실적 대기 목록', 'error-list': '수집 오류 목록'
+      'earnings-v2-pending-list': '기업 실적 대기 목록',
+      'error-list': '수집 오류 목록'
     };
     document.querySelectorAll('[data-collapsible-label], #policy-review-list, #sector-etf-list, #extreme-news-rule-list, #earnings-v2-pending-list, #error-list').forEach((list) => {
       if (list.parentElement?.tagName === 'DETAILS') return;
@@ -180,6 +207,12 @@
     badge.classList.remove('hidden');
   }
 
+  window.MacroWatchAdminApi = Object.freeze({
+    invoke: invokeAdmin,
+    notice: showNotice,
+    setListAttentionCount
+  });
+
   // 브라우저 비밀번호 관리자는 autocomplete=off를 무시할 수 있다. 관리자 자격증명
   // 입력칸은 사용자가 직접 선택할 때까지 읽기 전용으로 두고, 자동 주입값을 한 번 비운다.
   function protectCredentialInputs(root = document) {
@@ -199,36 +232,82 @@
     });
   }
 
+  function renderMemberRow(item) {
+    const usernameValue = escapeHtml(item.username || '');
+    const usernamePlaceholder = item.username ? '아이디' : '아이디 없음 (카카오 전용)';
+    const adminChecked = item.is_admin ? 'checked' : '';
+    const adminDisabled = item.is_current ? 'disabled' : '';
+    const kakaoConnectedBadgeClass = item.kakao_connected ? 'bg-yellow-950/50 text-yellow-400' : 'text-slate-600';
+    const kakaoConnectedBadgeText = item.kakao_connected ? (item.username ? '카카오 연결' : '카카오 전용') : '카카오 미연결';
+    const deleteButtonClass = item.is_current ? 'hidden' : '';
+    const createdDateText = escapeHtml(formatTime(item.created_at));
+    const createdDateSuffix = item.username ? '' : ' · ID/PW 미등록';
+
+    return (
+      `<article class="border-b border-slate-800 p-3 last:border-0">` +
+      `<form data-member-id="${escapeHtml(item.user_id)}" autocomplete="off" class="member-row-grid grid gap-2">` +
+      `<input name="username" value="${usernameValue}" required minlength="4" maxlength="32" autocomplete="off" placeholder="${usernamePlaceholder}" class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm placeholder:text-yellow-600">` +
+      `<input name="password" type="password" readonly data-admin-credential data-clear-on-activate data-autocomplete-token="one-time-code" autocomplete="one-time-code" placeholder="변경할 비밀번호 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm">` +
+      `<label class="flex items-center gap-2 px-2 text-xs">` +
+      `<input name="is_admin" type="checkbox" ${adminChecked} ${adminDisabled} class="accent-blue-500 disabled:opacity-60">관리자` +
+      `</label>` +
+      `<span class="self-center rounded-full px-2 py-1 text-center text-xs ${kakaoConnectedBadgeClass}">${kakaoConnectedBadgeText}</span>` +
+      `<div class="flex gap-1">` +
+      `<button type="submit" class="rounded-lg border border-blue-700 px-2 py-1 text-xs font-bold text-blue-300">저장</button>` +
+      `<button type="button" data-delete-member class="rounded-lg border border-red-800 px-2 py-1 text-xs font-bold text-red-300 ${deleteButtonClass}">탈퇴</button>` +
+      `</div>` +
+      `</form>` +
+      `<p class="mt-1 text-[10px] text-slate-600">가입 ${createdDateText}${createdDateSuffix}</p>` +
+      `</article>`
+    );
+  }
+
   function renderMembers(items) {
     const list = document.getElementById('member-list');
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><form data-member-id="${escapeHtml(item.user_id)}" autocomplete="off" class="member-row-grid grid gap-2"><input name="username" value="${escapeHtml(item.username || '')}" required minlength="4" maxlength="32" autocomplete="off" placeholder="${item.username ? '아이디' : '아이디 없음 (카카오 전용)'}" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm placeholder:text-yellow-600"><input name="password" type="password" readonly data-admin-credential data-clear-on-activate data-autocomplete-token="one-time-code" autocomplete="one-time-code" placeholder="변경할 비밀번호 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"><label class="flex items-center gap-2 px-2 text-xs"><input name="is_admin" type="checkbox" ${item.is_admin ? 'checked' : ''} ${item.is_current ? 'disabled' : ''} class="accent-blue-500 disabled:opacity-60">관리자</label><span class="self-center rounded-full px-2 py-1 text-center text-xs ${item.kakao_connected ? 'bg-yellow-950/50 text-yellow-400' : 'text-slate-600'}">${item.kakao_connected ? (item.username ? '카카오 연결' : '카카오 전용') : '카카오 미연결'}</span><div class="flex gap-1"><button type="submit" class="rounded-lg border border-blue-700 px-2 py-1 text-xs font-bold text-blue-300">저장</button><button type="button" data-delete-member class="rounded-lg border border-red-800 px-2 py-1 text-xs font-bold text-red-300 ${item.is_current ? 'hidden' : ''}">탈퇴</button></div></form><p class="mt-1 text-[10px] text-slate-600">가입 ${escapeHtml(formatTime(item.created_at))}${item.username ? '' : ' · ID/PW 미등록'}</p></article>`).join('') || '<p class="p-4 text-center text-sm text-slate-500">등록된 회원이 없습니다.</p>';
+    list.innerHTML = items.map(renderMemberRow).join('') || '<p class="p-4 text-center text-sm text-slate-500">등록된 회원이 없습니다.</p>';
     protectCredentialInputs(list);
     list.querySelectorAll('[data-member-id]').forEach((form) => {
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const values = new FormData(form);
         try {
-          const result = await invokeAdmin('update_member', { user_id: form.dataset.memberId, username: values.get('username'), password: values.get('password'), is_admin: values.get('is_admin') === 'on' });
+          const result = await invokeAdmin('update_member', {
+            user_id: form.dataset.memberId,
+            username: values.get('username'),
+            password: values.get('password'),
+            is_admin: values.get('is_admin') === 'on'
+          });
           if (result.requires_reauthentication) {
             window.alert('비밀번호를 변경했습니다. 새 비밀번호로 다시 로그인해 주세요.');
             await db.auth.signOut({ scope: 'local' });
             window.location.replace('./');
             return;
           }
-          showNotice('회원 저장 완료', '회원 정보를 저장했습니다.'); await loadMembers();
-        } catch (error) { showNotice('회원 저장 실패', error.message || '저장하지 못했습니다.', true); }
+          showNotice('회원 저장 완료', '회원 정보를 저장했습니다.');
+          await loadMembers();
+        } catch (error) {
+          showNotice('회원 저장 실패', error.message || '저장하지 못했습니다.', true);
+        }
       });
       form.querySelector('[data-delete-member]')?.addEventListener('click', async () => {
         if (!window.confirm('이 회원을 탈퇴 처리할까요? 회원 데이터도 함께 삭제됩니다.')) return;
-        try { await invokeAdmin('delete_member', { user_id: form.dataset.memberId }); await loadMembers(); }
-        catch (error) { showNotice('회원 탈퇴 실패', error.message || '처리하지 못했습니다.', true); }
+        try {
+          await invokeAdmin('delete_member', { user_id: form.dataset.memberId });
+          await loadMembers();
+        } catch (error) {
+          showNotice('회원 탈퇴 실패', error.message || '처리하지 못했습니다.', true);
+        }
       });
     });
   }
 
   async function loadMembers() {
-    try { renderMembers((await invokeAdmin('list_members')).items || []); }
-    catch (error) { document.getElementById('member-list').innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '회원 목록을 불러오지 못했습니다.')}</p>`; }
+    try {
+      const result = await invokeAdmin('list_members');
+      renderMembers(result.items || []);
+    } catch (error) {
+      document.getElementById('member-list').innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '회원 목록을 불러오지 못했습니다.')}</p>`;
+    }
   }
 
   async function createMember(event) {
@@ -251,8 +330,11 @@
       });
       await loadMembers();
       showNotice('회원 추가 완료', '새 회원 계정을 만들었습니다.');
-    } catch (error) { showNotice('회원 추가 실패', error.message || '회원을 만들지 못했습니다.', true); }
-    finally { submit.disabled = false; }
+    } catch (error) {
+      showNotice('회원 추가 실패', error.message || '회원을 만들지 못했습니다.', true);
+    } finally {
+      submit.disabled = false;
+    }
   }
 
   function badgeState(run) {
@@ -268,6 +350,38 @@
     element.className = `shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${classes}`;
     element.textContent = label;
     return label;
+  }
+
+  function renderErrors(items) {
+    const list = document.getElementById('error-list');
+    if (!items.length) {
+      list.innerHTML = '<div class="flex items-center justify-center gap-2 p-5 text-sm text-emerald-400"><i class="fa-solid fa-circle-check"></i>현재 기록된 수집 오류가 없습니다.</div>';
+      return;
+    }
+    list.innerHTML = items.map((item) => (
+      `<article class="border-b border-slate-800 p-4 last:border-0">` +
+      `<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">` +
+      `<div class="min-w-0">` +
+      `<h3 class="font-bold text-slate-200">${escapeHtml(item.title || '이름 없는 지표')}</h3>` +
+      `<p class="mt-1 break-words text-xs leading-relaxed text-red-300">${escapeHtml(item.last_error)}</p>` +
+      `</div>` +
+      `<span class="shrink-0 text-[11px] text-slate-500">${formatTime(item.last_checked_at)}</span>` +
+      `</div>` +
+      `</article>`
+    )).join('');
+  }
+
+  function applyDatabaseStatus(database) {
+    const total = Number(database?.total || 0);
+    const active = Number(database?.active || 0);
+    const errors = Array.isArray(database?.errors) ? database.errors : [];
+    const errorCount = Number(database?.error_count || 0);
+    document.getElementById('target-summary').textContent = `${active} / ${total}`;
+    document.getElementById('error-summary').textContent = `${errorCount}건`;
+    document.getElementById('error-summary').className =
+      `mt-2 text-lg font-extrabold ${errorCount ? 'text-red-400' : 'text-emerald-400'}`;
+    document.getElementById('last-db-check').textContent = `확인 ${formatTime(new Date())}`;
+    renderErrors(errors);
   }
 
   function applyStatus(data) {
@@ -286,28 +400,27 @@
     applyDatabaseStatus(data.database);
   }
 
-  function applyDatabaseStatus(database) {
-    const total = Number(database?.total || 0);
-    const active = Number(database?.active || 0);
-    const errors = Array.isArray(database?.errors) ? database.errors : [];
-    const errorCount = Number(database?.error_count || 0);
-    document.getElementById('target-summary').textContent = `${active} / ${total}`;
-    document.getElementById('error-summary').textContent = `${errorCount}건`;
-    document.getElementById('error-summary').className =
-      `mt-2 text-lg font-extrabold ${errorCount ? 'text-red-400' : 'text-emerald-400'}`;
-    document.getElementById('last-db-check').textContent = `확인 ${formatTime(new Date())}`;
-    renderErrors(errors);
-  }
+  function renderSectorEtfRow(item) {
+    const id = escapeHtml(item.id);
+    const sectorName = escapeHtml(item.sector_name);
+    const etfName = escapeHtml(item.etf_name);
+    const etfTicker = escapeHtml(item.etf_ticker);
+    const issuer = escapeHtml(item.issuer);
 
-  function renderErrors(items) {
-    const list = document.getElementById('error-list');
-    if (!items.length) {
-      list.innerHTML = '<div class="flex items-center justify-center gap-2 p-5 text-sm text-emerald-400"><i class="fa-solid fa-circle-check"></i>현재 기록된 수집 오류가 없습니다.</div>';
-      return;
-    }
-    list.innerHTML = items.map((item) =>
-      `<article class="border-b border-slate-800 p-4 last:border-0"><div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div class="min-w-0"><h3 class="font-bold text-slate-200">${escapeHtml(item.title || '이름 없는 지표')}</h3><p class="mt-1 break-words text-xs leading-relaxed text-red-300">${escapeHtml(item.last_error)}</p></div><span class="shrink-0 text-[11px] text-slate-500">${formatTime(item.last_checked_at)}</span></div></article>`
-    ).join('');
+    return (
+      `<article class="border-b border-slate-800 p-3 last:border-0">` +
+      `<div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_2fr_1fr_1fr_auto]">` +
+      `<input data-sector-field="sector_name" data-sector-id="${id}" maxlength="80" value="${sectorName}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500">` +
+      `<input data-sector-field="etf_name" data-sector-id="${id}" maxlength="120" value="${etfName}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500">` +
+      `<input data-sector-field="etf_ticker" data-sector-id="${id}" maxlength="24" value="${etfTicker}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs uppercase text-slate-100 outline-none focus:border-cyan-500">` +
+      `<input data-sector-field="issuer" data-sector-id="${id}" maxlength="80" value="${issuer}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500">` +
+      `<div class="flex gap-1">` +
+      `<button data-save-sector-id="${id}" class="rounded-lg border border-cyan-700/70 px-2 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-950/50">저장</button>` +
+      `<button data-delete-sector-id="${id}" class="rounded-lg border border-red-700/70 px-2 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button>` +
+      `</div>` +
+      `</div>` +
+      `</article>`
+    );
   }
 
   function renderSectorEtfs(items) {
@@ -316,7 +429,7 @@
       list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 섹터 ETF가 없습니다.</p>';
       return;
     }
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_2fr_1fr_1fr_auto]"><input data-sector-field="sector_name" data-sector-id="${escapeHtml(item.id)}" maxlength="80" value="${escapeHtml(item.sector_name)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="etf_name" data-sector-id="${escapeHtml(item.id)}" maxlength="120" value="${escapeHtml(item.etf_name)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="etf_ticker" data-sector-id="${escapeHtml(item.id)}" maxlength="24" value="${escapeHtml(item.etf_ticker)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs uppercase text-slate-100 outline-none focus:border-cyan-500"><input data-sector-field="issuer" data-sector-id="${escapeHtml(item.id)}" maxlength="80" value="${escapeHtml(item.issuer)}" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500"><div class="flex gap-1"><button data-save-sector-id="${escapeHtml(item.id)}" class="rounded-lg border border-cyan-700/70 px-2 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-950/50">저장</button><button data-delete-sector-id="${escapeHtml(item.id)}" class="rounded-lg border border-red-700/70 px-2 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button></div></div></article>`).join('');
+    list.innerHTML = items.map(renderSectorEtfRow).join('');
     list.querySelectorAll('[data-save-sector-id]').forEach((button) => button.addEventListener('click', async () => {
       const id = button.dataset.saveSectorId;
       const value = (field) => list.querySelector(`[data-sector-id="${id}"][data-sector-field="${field}"]`);
@@ -330,14 +443,39 @@
           issuer: value('issuer').value
         });
         await loadSectorEtfs();
-      } catch (error) { showNotice('섹터 ETF 저장 실패', error.message || '저장하지 못했습니다.', true); button.disabled = false; }
+      } catch (error) {
+        showNotice('섹터 ETF 저장 실패', error.message || '저장하지 못했습니다.', true);
+        button.disabled = false;
+      }
     }));
     list.querySelectorAll('[data-delete-sector-id]').forEach((button) => button.addEventListener('click', async () => {
       if (!window.confirm('이 섹터 ETF를 삭제할까요?')) return;
       button.disabled = true;
-      try { await invokeAdmin('delete_sector_etf', { id: button.dataset.deleteSectorId }); await loadSectorEtfs(); }
-      catch (error) { showNotice('섹터 ETF 삭제 실패', error.message || '삭제하지 못했습니다.', true); button.disabled = false; }
+      try {
+        await invokeAdmin('delete_sector_etf', { id: button.dataset.deleteSectorId });
+        await loadSectorEtfs();
+      } catch (error) {
+        showNotice('섹터 ETF 삭제 실패', error.message || '삭제하지 못했습니다.', true);
+        button.disabled = false;
+      }
     }));
+  }
+
+  function renderExtremeNewsRuleRow(item) {
+    const id = escapeHtml(item.id);
+    const phrase = escapeHtml(item.phrase);
+
+    return (
+      `<article class="border-b border-slate-800 p-3 last:border-0">` +
+      `<div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto]">` +
+      `<input data-extreme-field="phrase" data-extreme-id="${id}" maxlength="300" value="${phrase}" aria-label="결정적 뉴스 기준 문장" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-violet-500">` +
+      `<div class="flex gap-1">` +
+      `<button data-save-extreme-id="${id}" class="rounded-lg border border-violet-700/70 px-2 py-1.5 text-xs font-bold text-violet-300 hover:bg-violet-950/50">저장</button>` +
+      `<button data-delete-extreme-id="${id}" class="rounded-lg border border-red-700/70 px-2 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button>` +
+      `</div>` +
+      `</div>` +
+      `</article>`
+    );
   }
 
   function renderExtremeNewsRules(items) {
@@ -346,7 +484,7 @@
       list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 기준이 없습니다.</p>';
       return;
     }
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><div class="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto]"><input data-extreme-field="phrase" data-extreme-id="${escapeHtml(item.id)}" maxlength="300" value="${escapeHtml(item.phrase)}" aria-label="결정적 뉴스 기준 문장" class="min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-violet-500"><div class="flex gap-1"><button data-save-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-violet-700/70 px-2 py-1.5 text-xs font-bold text-violet-300 hover:bg-violet-950/50">저장</button><button data-delete-extreme-id="${escapeHtml(item.id)}" class="rounded-lg border border-red-700/70 px-2 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button></div></div></article>`).join('');
+    list.innerHTML = items.map(renderExtremeNewsRuleRow).join('');
     list.querySelectorAll('[data-save-extreme-id]').forEach((button) => button.addEventListener('click', async () => {
       const id = button.dataset.saveExtremeId;
       const value = (field) => list.querySelector(`[data-extreme-id="${id}"][data-extreme-field="${field}"]`);
@@ -354,14 +492,39 @@
       try {
         await invokeAdmin('save_extreme_news_rule', { id, phrase: value('phrase').value });
         await loadExtremeNewsRules();
-      } catch (error) { showNotice('기준 저장 실패', error.message || '저장하지 못했습니다.', true); button.disabled = false; }
+      } catch (error) {
+        showNotice('기준 저장 실패', error.message || '저장하지 못했습니다.', true);
+        button.disabled = false;
+      }
     }));
     list.querySelectorAll('[data-delete-extreme-id]').forEach((button) => button.addEventListener('click', async () => {
       if (!window.confirm('이 결정적 뉴스 기준을 삭제할까요?')) return;
       button.disabled = true;
-      try { await invokeAdmin('delete_extreme_news_rule', { id: button.dataset.deleteExtremeId }); await loadExtremeNewsRules(); }
-      catch (error) { showNotice('기준 삭제 실패', error.message || '삭제하지 못했습니다.', true); button.disabled = false; }
+      try {
+        await invokeAdmin('delete_extreme_news_rule', { id: button.dataset.deleteExtremeId });
+        await loadExtremeNewsRules();
+      } catch (error) {
+        showNotice('기준 삭제 실패', error.message || '삭제하지 못했습니다.', true);
+        button.disabled = false;
+      }
     }));
+  }
+
+  function renderHistoricalPivotReasonRow(item) {
+    const id = escapeHtml(item.id);
+    const phrase = escapeHtml(item.phrase);
+
+    return (
+      `<article class="border-b border-slate-800 p-3 last:border-0">` +
+      `<div class="flex flex-col gap-2 sm:flex-row">` +
+      `<input data-pivot-reason-id="${id}" value="${phrase}" maxlength="250" aria-label="피봇 근거 문구" class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-fuchsia-500">` +
+      `<div class="flex gap-2">` +
+      `<button type="button" data-save-pivot-reason="${id}" class="rounded-lg border border-fuchsia-700 px-3 py-2 text-xs font-bold text-fuchsia-300 hover:bg-fuchsia-950/50">저장</button>` +
+      `<button type="button" data-delete-pivot-reason="${id}" class="rounded-lg border border-red-700 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button>` +
+      `</div>` +
+      `</div>` +
+      `</article>`
+    );
   }
 
   function renderHistoricalPivotReasons(items) {
@@ -370,14 +533,20 @@
       list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 문구가 없습니다.</p>';
       return;
     }
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-3 last:border-0"><div class="flex flex-col gap-2 sm:flex-row"><input data-pivot-reason-id="${escapeHtml(item.id)}" value="${escapeHtml(item.phrase)}" maxlength="250" aria-label="피봇 근거 문구" class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-fuchsia-500"><div class="flex gap-2"><button type="button" data-save-pivot-reason="${escapeHtml(item.id)}" class="rounded-lg border border-fuchsia-700 px-3 py-2 text-xs font-bold text-fuchsia-300 hover:bg-fuchsia-950/50">저장</button><button type="button" data-delete-pivot-reason="${escapeHtml(item.id)}" class="rounded-lg border border-red-700 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-950/50">삭제</button></div></div></article>`).join('');
+    list.innerHTML = items.map(renderHistoricalPivotReasonRow).join('');
     list.querySelectorAll('[data-save-pivot-reason]').forEach((button) => button.addEventListener('click', async () => {
       const id = button.dataset.savePivotReason;
       button.disabled = true;
       try {
-        await invokeAdmin('save_historical_pivot_reason_preset', { id, phrase: list.querySelector(`[data-pivot-reason-id="${id}"]`).value });
+        await invokeAdmin('save_historical_pivot_reason_preset', {
+          id,
+          phrase: list.querySelector(`[data-pivot-reason-id="${id}"]`).value
+        });
         await loadHistoricalPivotReasons();
-      } catch (error) { showNotice('문구 저장 실패', error.message || '저장하지 못했습니다.', true); button.disabled = false; }
+      } catch (error) {
+        showNotice('문구 저장 실패', error.message || '저장하지 못했습니다.', true);
+        button.disabled = false;
+      }
     }));
     list.querySelectorAll('[data-delete-pivot-reason]').forEach((button) => button.addEventListener('click', async () => {
       if (!window.confirm('이 문구를 선택 목록에서 삭제할까요? 이미 저장된 피봇 근거는 유지됩니다.')) return;
@@ -385,14 +554,21 @@
       try {
         await invokeAdmin('delete_historical_pivot_reason_preset', { id: button.dataset.deletePivotReason });
         await loadHistoricalPivotReasons();
-      } catch (error) { showNotice('문구 삭제 실패', error.message || '삭제하지 못했습니다.', true); button.disabled = false; }
+      } catch (error) {
+        showNotice('문구 삭제 실패', error.message || '삭제하지 못했습니다.', true);
+        button.disabled = false;
+      }
     }));
   }
 
   async function loadHistoricalPivotReasons() {
     const list = document.getElementById('historical-pivot-reason-list');
-    try { renderHistoricalPivotReasons((await invokeAdmin('list_historical_pivot_reason_presets')).items || []); }
-    catch (error) { list.innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '문구 목록을 불러오지 못했습니다.')}</p>`; }
+    try {
+      const result = await invokeAdmin('list_historical_pivot_reason_presets');
+      renderHistoricalPivotReasons(result.items || []);
+    } catch (error) {
+      list.innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '문구 목록을 불러오지 못했습니다.')}</p>`;
+    }
   }
 
   async function addHistoricalPivotReason(event) {
@@ -401,17 +577,26 @@
     const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
     try {
-      await invokeAdmin('save_historical_pivot_reason_preset', { phrase: document.getElementById('historical-pivot-reason-input').value });
+      await invokeAdmin('save_historical_pivot_reason_preset', {
+        phrase: document.getElementById('historical-pivot-reason-input').value
+      });
       form.reset();
       await loadHistoricalPivotReasons();
-    } catch (error) { showNotice('문구 추가 실패', error.message || '추가하지 못했습니다.', true); }
-    finally { button.disabled = false; }
+    } catch (error) {
+      showNotice('문구 추가 실패', error.message || '추가하지 못했습니다.', true);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   async function loadExtremeNewsRules() {
     const list = document.getElementById('extreme-news-rule-list');
-    try { renderExtremeNewsRules((await invokeAdmin('list_extreme_news_rules')).items || []); }
-    catch (error) { list.innerHTML = '<p class="p-4 text-center text-sm text-red-300">기준 목록을 불러오지 못했습니다. DB 마이그레이션 적용 후 다시 시도해 주세요.</p>'; }
+    try {
+      const result = await invokeAdmin('list_extreme_news_rules');
+      renderExtremeNewsRules(result.items || []);
+    } catch (error) {
+      list.innerHTML = '<p class="p-4 text-center text-sm text-red-300">기준 목록을 불러오지 못했습니다. DB 마이그레이션 적용 후 다시 시도해 주세요.</p>';
+    }
   }
 
   async function addExtremeNewsRule(event) {
@@ -425,14 +610,21 @@
       });
       form.reset();
       await loadExtremeNewsRules();
-    } catch (error) { showNotice('기준 추가 실패', error.message || '추가하지 못했습니다.', true); }
-    finally { submit.disabled = false; }
+    } catch (error) {
+      showNotice('기준 추가 실패', error.message || '추가하지 못했습니다.', true);
+    } finally {
+      submit.disabled = false;
+    }
   }
 
   async function loadSectorEtfs() {
     const list = document.getElementById('sector-etf-list');
-    try { renderSectorEtfs((await invokeAdmin('list_sector_etfs')).items || []); }
-    catch (error) { list.innerHTML = '<p class="p-4 text-center text-sm text-red-300">섹터 목록을 불러오지 못했습니다. DB 마이그레이션 적용 후 다시 시도해 주세요.</p>'; }
+    try {
+      const result = await invokeAdmin('list_sector_etfs');
+      renderSectorEtfs(result.items || []);
+    } catch (error) {
+      list.innerHTML = '<p class="p-4 text-center text-sm text-red-300">섹터 목록을 불러오지 못했습니다. DB 마이그레이션 적용 후 다시 시도해 주세요.</p>';
+    }
   }
 
   async function addSectorEtf(event) {
@@ -451,8 +643,47 @@
         ? '가격 이력은 다음 정기 수집에서 자동으로 보완됩니다.'
         : `최근 가격 ${formatDisplayNumber(result.price_rows || 0, { maximumFractionDigits: 0, locale: 'ko-KR' })}건도 함께 등록했습니다.`;
       showNotice('섹터 ETF 등록 완료', `${result.item?.etf_name || 'ETF'}을(를) 등록했습니다. ${historyMessage}`);
-    } catch (error) { showNotice('섹터 ETF 추가 실패', error.message || '추가하지 못했습니다.', true); }
-    finally { submit.disabled = false; }
+    } catch (error) {
+      showNotice('섹터 ETF 추가 실패', error.message || '추가하지 못했습니다.', true);
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  function renderEarningsV2PendingRow(item) {
+    const missingParts = [];
+    if (item.missing_top_line) missingParts.push('매출');
+    if (item.missing_operating_income) missingParts.push('영업이익');
+    if (item.missing_net_income) missingParts.push('순이익');
+    const missingLabel = missingParts.join(' · ');
+
+    const amountValue = (value) => (value == null ? '' : String(value));
+
+    return (
+      `<article class="border-b border-slate-800 p-4 last:border-0">` +
+      `<form class="earnings-v2-pending-form space-y-3" data-company-id="${escapeHtml(item.company_id)}" data-fiscal-year="${Number(item.market_year)}" data-fiscal-quarter="${Number(item.market_quarter)}">` +
+      `<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">` +
+      `<div>` +
+      `<p class="font-bold text-slate-200">${escapeHtml(item.company_name)} <span class="ml-1 text-xs font-normal text-slate-500">${escapeHtml(item.stock_code || '')}</span></p>` +
+      `<p class="mt-1 text-xs text-slate-500">${escapeHtml(`${item.market_year} Q${item.market_quarter}`)} · ${escapeHtml(item.market_id)}</p>` +
+      `</div>` +
+      `<span class="w-fit rounded-full border border-orange-800/70 bg-orange-950/40 px-2.5 py-1 text-xs font-bold text-orange-300">미확보: ${escapeHtml(missingLabel)}</span>` +
+      `</div>` +
+      `<div class="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">` +
+      `<label class="text-xs text-slate-400">매출` +
+      `<input name="top_line" autocomplete="off" inputmode="decimal" required value="${escapeHtml(amountValue(item.top_line))}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500">` +
+      `</label>` +
+      `<label class="text-xs text-slate-400">영업이익` +
+      `<input name="operating_income" autocomplete="off" inputmode="decimal" required value="${escapeHtml(amountValue(item.operating_income))}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500">` +
+      `</label>` +
+      `<label class="text-xs text-slate-400">순이익` +
+      `<input name="net_income" autocomplete="off" inputmode="decimal" required value="${escapeHtml(amountValue(item.net_income))}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500">` +
+      `</label>` +
+      `<button type="submit" class="self-end rounded-lg border border-blue-600 px-4 py-2 text-sm font-bold text-blue-300 hover:bg-blue-950/40">확정</button>` +
+      `</div>` +
+      `</form>` +
+      `</article>`
+    );
   }
 
   function renderEarningsV2Pending(items) {
@@ -462,11 +693,7 @@
       list.innerHTML = '<p class="p-4 text-center text-sm text-emerald-400">대기 중인 기업 실적이 없습니다.</p>';
       return;
     }
-    const missingLabel = (item) => [
-      item.missing_top_line ? '매출' : '', item.missing_operating_income ? '영업이익' : '', item.missing_net_income ? '순이익' : '',
-    ].filter(Boolean).join(' · ');
-    const amountValue = (value) => value == null ? '' : String(value);
-    list.innerHTML = items.map((item) => `<article class="border-b border-slate-800 p-4 last:border-0"><form class="earnings-v2-pending-form space-y-3" data-company-id="${escapeHtml(item.company_id)}" data-fiscal-year="${Number(item.market_year)}" data-fiscal-quarter="${Number(item.market_quarter)}"><div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p class="font-bold text-slate-200">${escapeHtml(item.company_name)} <span class="ml-1 text-xs font-normal text-slate-500">${escapeHtml(item.stock_code || '')}</span></p><p class="mt-1 text-xs text-slate-500">${escapeHtml(`${item.market_year} Q${item.market_quarter}`)} · ${escapeHtml(item.market_id)}</p></div><span class="w-fit rounded-full border border-orange-800/70 bg-orange-950/40 px-2.5 py-1 text-xs font-bold text-orange-300">미확보: ${escapeHtml(missingLabel(item))}</span></div><div class="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]"><label class="text-xs text-slate-400">매출<input name="top_line" autocomplete="off" inputmode="decimal" required value="${escapeHtml(amountValue(item.top_line))}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"></label><label class="text-xs text-slate-400">영업이익<input name="operating_income" autocomplete="off" inputmode="decimal" required value="${escapeHtml(amountValue(item.operating_income))}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"></label><label class="text-xs text-slate-400">순이익<input name="net_income" autocomplete="off" inputmode="decimal" required value="${escapeHtml(amountValue(item.net_income))}" class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-blue-500"></label><button type="submit" class="self-end rounded-lg border border-blue-600 px-4 py-2 text-sm font-bold text-blue-300 hover:bg-blue-950/40">확정</button></div></form></article>`).join('');
+    list.innerHTML = items.map(renderEarningsV2PendingRow).join('');
     list.querySelectorAll('.earnings-v2-pending-form').forEach((form) => form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const submit = form.querySelector('button[type="submit"]');
@@ -482,18 +709,26 @@
           net_income: values.get('net_income'),
         });
         await loadEarningsV2Pending();
-        showNotice('기업 실적 확정 완료', result.recalculation_dispatched
-          ? '수동 값을 저장했고 해당 분기 재계산을 시작했습니다.'
-          : `수동 값은 저장했습니다. 분기 재계산 시작에는 실패했습니다${result.recalculation_error ? `: ${result.recalculation_error}` : ''}`, !result.recalculation_dispatched);
+        showNotice(
+          '기업 실적 확정 완료',
+          result.recalculation_dispatched
+            ? '수동 값을 저장했고 해당 분기 재계산을 시작했습니다.'
+            : `수동 값은 저장했습니다. 분기 재계산 시작에는 실패했습니다${result.recalculation_error ? `: ${result.recalculation_error}` : ''}`,
+          !result.recalculation_dispatched
+        );
       } catch (error) {
         showNotice('기업 실적 확정 실패', error.message || '수동 값을 저장하지 못했습니다.', true);
-      } finally { submit.disabled = false; }
+      } finally {
+        submit.disabled = false;
+      }
     }));
   }
 
   async function loadEarningsV2Pending() {
-    try { renderEarningsV2Pending((await invokeAdmin('list_earnings_v2_pending')).items || []); }
-    catch (error) {
+    try {
+      const result = await invokeAdmin('list_earnings_v2_pending');
+      renderEarningsV2Pending(result.items || []);
+    } catch (error) {
       setListAttentionCount('earnings-v2-pending-list', 0);
       document.getElementById('earnings-v2-pending-list').innerHTML = '<p class="p-4 text-center text-sm text-red-300">기업 실적 대기 목록을 불러오지 못했습니다.</p>';
     }
@@ -503,40 +738,90 @@
     return new Promise((resolve) => {
       const modal = document.createElement('div');
       modal.className = 'fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4';
-      modal.innerHTML = `<section class="w-full max-w-sm rounded-2xl border border-red-800 bg-slate-900 p-6 text-center shadow-2xl"><i class="fa-solid fa-triangle-exclamation text-3xl text-red-400"></i><h2 class="mt-4 text-lg font-bold text-white">자동수집 삭제 확인</h2><p class="mt-2 text-sm leading-relaxed text-slate-400">${escapeHtml(message)}</p><div class="mt-5 grid grid-cols-2 gap-2"><button type="button" data-cancel class="rounded-lg border border-slate-700 py-2.5 text-sm font-bold text-slate-300">취소</button><button type="button" data-confirm class="rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-500">삭제</button></div></section>`;
-      const close = (confirmed) => { modal.remove(); resolve(confirmed); };
+      modal.innerHTML = (
+        `<section class="w-full max-w-sm rounded-2xl border border-red-800 bg-slate-900 p-6 text-center shadow-2xl">` +
+        `<i class="fa-solid fa-triangle-exclamation text-3xl text-red-400"></i>` +
+        `<h2 class="mt-4 text-lg font-bold text-white">자동수집 삭제 확인</h2>` +
+        `<p class="mt-2 text-sm leading-relaxed text-slate-400">${escapeHtml(message)}</p>` +
+        `<div class="mt-5 grid grid-cols-2 gap-2">` +
+        `<button type="button" data-cancel class="rounded-lg border border-slate-700 py-2.5 text-sm font-bold text-slate-300">취소</button>` +
+        `<button type="button" data-confirm class="rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-500">삭제</button>` +
+        `</div>` +
+        `</section>`
+      );
+      const close = (confirmed) => {
+        modal.remove();
+        resolve(confirmed);
+      };
       modal.querySelector('[data-cancel]').addEventListener('click', () => close(false));
       modal.querySelector('[data-confirm]').addEventListener('click', () => close(true));
-      modal.addEventListener('click', (event) => { if (event.target === modal) close(false); });
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal) close(false);
+      });
       document.body.append(modal);
     });
   }
 
+  function renderAutomationScheduleRow(item) {
+    const paused = item.state !== 'active';
+    const isLastSchedule = Number(item.schedule_count) === 1;
+
+    return (
+      `<article data-automation-workflow-id="${escapeHtml(item.workflow_id)}" data-automation-cron="${escapeHtml(item.cron)}" data-automation-name="${escapeHtml(item.name)}" data-automation-last-schedule="${isLastSchedule}" data-automation-paused="${paused}" class="border-b border-slate-800 p-4 last:border-0">` +
+      `<div class="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_8rem_auto]">` +
+      `<div class="min-w-0">` +
+      `<h3 class="truncate font-bold text-slate-200">${escapeHtml(item.name)}</h3>` +
+      `<p class="mt-1 text-[11px] text-slate-500">최근 성공 ${escapeHtml(formatTime(item.latest_success?.updated_at))}</p>` +
+      `</div>` +
+      `<input data-automation-time type="time" value="${escapeHtml(item.kst_time || '')}" class="w-32 min-w-32 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white">` +
+      `<div class="flex flex-wrap gap-1">` +
+      `<button type="button" data-save-automation class="rounded-lg border border-blue-700 px-2.5 py-1.5 text-xs font-bold text-blue-300">저장</button>` +
+      `<button type="button" data-toggle-automation title="${paused ? '클릭하여 재시작' : '클릭하여 중지'}" class="rounded-lg border px-2.5 py-1.5 text-xs font-bold ${paused ? 'border-amber-800 text-amber-300' : 'border-emerald-800 text-emerald-300'}">${paused ? '중지됨' : '실행 중'}</button>` +
+      `<button type="button" data-delete-automation-time title="${isLastSchedule ? '자동수집 전체 삭제' : '이 실행만 삭제'}" class="rounded-lg border border-red-800 px-2.5 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">${isLastSchedule ? '전체 삭제' : '삭제'}</button>` +
+      `</div>` +
+      `</div>` +
+      `</article>`
+    );
+  }
+
   function renderAutomationSchedules(items) {
     const list = document.getElementById('automation-schedule-list');
-    if (!items.length) { list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 정기 자동수집이 없습니다.</p>'; return; }
-    list.innerHTML = items.map((item) => {
-      const paused = item.state !== 'active';
-      const isLastSchedule = Number(item.schedule_count) === 1;
-      return `<article data-automation-workflow-id="${escapeHtml(item.workflow_id)}" data-automation-cron="${escapeHtml(item.cron)}" data-automation-name="${escapeHtml(item.name)}" data-automation-last-schedule="${isLastSchedule}" data-automation-paused="${paused}" class="border-b border-slate-800 p-4 last:border-0"><div class="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_8rem_auto]"><div class="min-w-0"><h3 class="truncate font-bold text-slate-200">${escapeHtml(item.name)}</h3><p class="mt-1 text-[11px] text-slate-500">최근 성공 ${escapeHtml(formatTime(item.latest_success?.updated_at))}</p></div><input data-automation-time type="time" value="${escapeHtml(item.kst_time || '')}" class="w-32 min-w-32 rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white"><div class="flex flex-wrap gap-1"><button type="button" data-save-automation class="rounded-lg border border-blue-700 px-2.5 py-1.5 text-xs font-bold text-blue-300">저장</button><button type="button" data-toggle-automation title="${paused ? '클릭하여 재시작' : '클릭하여 중지'}" class="rounded-lg border px-2.5 py-1.5 text-xs font-bold ${paused ? 'border-amber-800 text-amber-300' : 'border-emerald-800 text-emerald-300'}">${paused ? '중지됨' : '실행 중'}</button><button type="button" data-delete-automation-time title="${isLastSchedule ? '자동수집 전체 삭제' : '이 실행만 삭제'}" class="rounded-lg border border-red-800 px-2.5 py-1.5 text-xs font-bold text-red-300 hover:bg-red-950/50">${isLastSchedule ? '전체 삭제' : '삭제'}</button></div></div></article>`;
-    }).join('');
+    if (!items.length) {
+      list.innerHTML = '<p class="p-4 text-center text-sm text-slate-500">등록된 정기 자동수집이 없습니다.</p>';
+      return;
+    }
+    list.innerHTML = items.map(renderAutomationScheduleRow).join('');
     list.querySelectorAll('[data-automation-workflow-id]').forEach((row) => {
-      const id = row.dataset.automationWorkflowId, cron = row.dataset.automationCron, name = row.dataset.automationName;
+      const id = row.dataset.automationWorkflowId;
+      const cron = row.dataset.automationCron;
+      const name = row.dataset.automationName;
+
       row.querySelector('[data-save-automation]').addEventListener('click', async (event) => {
-        const button = event.currentTarget; button.disabled = true;
+        const button = event.currentTarget;
+        button.disabled = true;
         const time = row.querySelector('[data-automation-time]').value;
         try {
           await invokeAdmin('update_automation_time', { workflow_id: id, cron, time });
           await loadAutomationSchedules();
           showNotice('일정 저장 완료', `${name} 실행 시간을 ${time}으로 저장했습니다.`);
+        } catch (error) {
+          showNotice('일정 저장 실패', error.message || '시간을 저장하지 못했습니다.', true);
+          button.disabled = false;
         }
-        catch (error) { showNotice('일정 저장 실패', error.message || '시간을 저장하지 못했습니다.', true); button.disabled = false; }
       });
+
       row.querySelector('[data-toggle-automation]').addEventListener('click', async (event) => {
-        const button = event.currentTarget; button.disabled = true;
-        try { await invokeAdmin('set_automation_enabled', { workflow_id: id, enabled: row.dataset.automationPaused === 'true' }); await loadAutomationSchedules(); }
-        catch (error) { showNotice('상태 변경 실패', error.message || '상태를 바꾸지 못했습니다.', true); button.disabled = false; }
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          await invokeAdmin('set_automation_enabled', { workflow_id: id, enabled: row.dataset.automationPaused === 'true' });
+          await loadAutomationSchedules();
+        } catch (error) {
+          showNotice('상태 변경 실패', error.message || '상태를 바꾸지 못했습니다.', true);
+          button.disabled = false;
+        }
       });
+
       row.querySelector('[data-delete-automation-time]').addEventListener('click', async () => {
         const input = row.querySelector('[data-automation-time]');
         const isLastSchedule = row.dataset.automationLastSchedule === 'true';
@@ -544,16 +829,27 @@
           ? `${name} 자동수집과 실패 알림 대상을 함께 삭제합니다. 이 작업은 되돌릴 수 없습니다.`
           : `${name}의 ${input.value} 실행만 삭제합니다. 다른 실행과 자동수집은 유지됩니다.`;
         if (!await confirmAutomationDeletion(message)) return;
-        try { await invokeAdmin(isLastSchedule ? 'delete_automation_workflow' : 'delete_automation_time', { workflow_id: id, ...(isLastSchedule ? {} : { cron }) }); await loadAutomationSchedules(); }
-        catch (error) { showNotice('실행 시간 삭제 실패', error.message || '삭제하지 못했습니다.', true); }
+        try {
+          await invokeAdmin(
+            isLastSchedule ? 'delete_automation_workflow' : 'delete_automation_time',
+            { workflow_id: id, ...(isLastSchedule ? {} : { cron }) }
+          );
+          await loadAutomationSchedules();
+        } catch (error) {
+          showNotice('실행 시간 삭제 실패', error.message || '삭제하지 못했습니다.', true);
+        }
       });
     });
   }
 
   async function loadAutomationSchedules() {
     const list = document.getElementById('automation-schedule-list');
-    try { renderAutomationSchedules((await invokeAdmin('list_automation_schedules')).items || []); }
-    catch (error) { list.innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '자동 수집 목록을 불러오지 못했습니다.')}</p>`; }
+    try {
+      const result = await invokeAdmin('list_automation_schedules');
+      renderAutomationSchedules(result.items || []);
+    } catch (error) {
+      list.innerHTML = `<p class="p-4 text-center text-sm text-red-300">${escapeHtml(error.message || '자동 수집 목록을 불러오지 못했습니다.')}</p>`;
+    }
   }
 
   async function loadAll() {
@@ -561,7 +857,11 @@
     button.disabled = true;
     button.classList.add('opacity-60');
     try {
-      try { await loadAiModels(); } catch { /* The model card shows its own read error. */ }
+      try {
+        await loadAiModels();
+      } catch {
+        // The model card shows its own read error.
+      }
       const status = await invokeAdmin('status');
       applyStatus(status);
       await loadEarningsV2Pending();
@@ -689,4 +989,3 @@
     authorizeAdmin();
   });
 })();
-
