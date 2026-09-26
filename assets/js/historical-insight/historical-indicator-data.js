@@ -82,12 +82,16 @@
           const relationship=override.relationship||row.relationship||null;
           const reason=override.reason||row.reason||'';
           return Object.freeze({
-            sourceDate:String(row.source_date).slice(0,10),pivotDate:row.pivot_date?String(row.pivot_date).slice(0,10):null,
-            pivotValue:row.pivot_value==null?null:Number(row.pivot_value),relationship,
-            reason,comment:row.comment||'',keyReference:isKey?keyReference:null,
+            sourceDate: String(row.source_date).slice(0, 10),
+            pivotDate: row.pivot_date ? String(row.pivot_date).slice(0, 10) : null,
+            pivotValue: row.pivot_value == null ? null : Number(row.pivot_value),
+            relationship,
+            reason,
+            comment: row.comment || '',
+            keyReference:isKey?keyReference:null,
             designatedReference,
             isVerified,
-            keySuppressed:rawKey===false||isUnclear
+            keySuppressed: Boolean(row.key_suppressed || rawKey === false || isUnclear)
           });
         })));
       manualPivotCache.set(key,promise);promise.catch(()=>manualPivotCache.delete(key));return promise;
