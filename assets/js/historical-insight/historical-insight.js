@@ -809,7 +809,8 @@
       keyDecision: manual?.keyReference ? 'manual_on' : manual?.isVerified ? 'manual_verified' : manual?.designatedReference ? 'manual_ref' : manual?.keySuppressed ? 'manual_off' : 'auto',
       isKey,
       isVerified,
-      designatedReference
+      designatedReference,
+      cycle: activeIndicatorContext?.cycle || (activeCase && activeCode && typeof cycleData !== 'undefined' ? cycleData.marketCycle(activeCase, activeCode) : null)
     };
 
     $('historical-manual-pivot-title').textContent = `${item.meta.title} · ${existing ? '변곡점 수정' : '변곡점 추가'}`;
@@ -1739,8 +1740,21 @@
   });
   $('historical-manual-pivot-reference').addEventListener('change', () => {
     if (manualPivotContext) manualPivotContext.keyTouched = true;
-    if ($('historical-manual-pivot-reference').value === 'UNCLEAR') {
-      $('historical-manual-pivot-is-key').checked = false;
+    const selectedRef = $('historical-manual-pivot-reference')?.value || '';
+    const isKeyEl = $('historical-manual-pivot-is-key');
+    if (!isKeyEl) return;
+    if (selectedRef === 'UNCLEAR' || !selectedRef) {
+      isKeyEl.checked = false;
+    } else {
+      const cycle = manualPivotContext?.cycle || (typeof activeIndicatorContext !== 'undefined' ? activeIndicatorContext?.cycle : null) || (typeof activeCase !== 'undefined' && activeCase && typeof activeCode !== 'undefined' && activeCode && typeof cycleData !== 'undefined' ? cycleData.marketCycle(activeCase, activeCode) : null);
+      const refDate = cycle?.[`${selectedRef.toLowerCase()}Date`];
+      const pivotDate = $('historical-manual-pivot-date')?.value;
+      if (refDate && pivotDate && typeof indicatorAnalysis !== 'undefined' && typeof indicatorAnalysis.relevanceWindow === 'function') {
+        const window = indicatorAnalysis.relevanceWindow(refDate);
+        isKeyEl.checked = Boolean(window && pivotDate >= window.from && pivotDate <= window.to);
+      } else if (cycle) {
+        isKeyEl.checked = false;
+      }
     }
   });
   $('historical-manual-pivot-close').addEventListener('click', closeManualPivotModal);
