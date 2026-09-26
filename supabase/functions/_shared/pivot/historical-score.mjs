@@ -22,8 +22,8 @@ function manualDirectionMatches(pivot, type, pivots, observations, cycle, market
       .filter(([, date]) => date).sort((a, b) => Math.abs(days(a[1], pivot.pivotDate)) - Math.abs(days(b[1], pivot.pivotDate)))[0]?.[0] || type;
   const bufferEnd = shiftMonths(cycle.troughDate, 24);
   const end = owner === 'START' ? cycle.peakDate : owner === 'PEAK' ? cycle.troughDate : bufferEnd;
-  const next = pivots.find(candidate => candidate.pivotDate > (owner === 'TROUGH' ? cycle.troughDate : pivot.pivotDate)
-    && candidate.pivotDate <= end);
+  const nextPivotStart = owner === 'TROUGH' ? (pivot.pivotDate > cycle.troughDate ? pivot.pivotDate : cycle.troughDate) : pivot.pivotDate;
+  const next = pivots.find(candidate => candidate.pivotDate > nextPivotStart && candidate.pivotDate <= end);
   const to = next?.pivotDate || (owner === 'TROUGH' ? lastObservationDate(observations, bufferEnd) : end);
   if (!to || to <= pivot.pivotDate) return false;
   const fromValue = valueAt(observations, pivot.pivotDate), toValue = valueAt(observations, to);

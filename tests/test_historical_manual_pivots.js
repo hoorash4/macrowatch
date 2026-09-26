@@ -699,6 +699,16 @@ test('unchecking key on a key-verified pivot results in VERIFIED reference and r
   assert.equal(target.selectedReferences.length,0);
 });
 
+test('matchesDirection for TROUGH owner correctly checks next interval when pivot is after troughDate', () => {
+  const cycle = { startDate: '1997-01-01', peakDate: '1997-07-01', troughDate: '1998-08-31' };
+  const pivot = { isManual: true, pivotDate: '1998-10-05', relationship: 'positive', keyReference: null };
+  const pivots = [pivot];
+  const rows = [{ time: '1998-10-05', value: 4.5 }, { time: '2000-08-31', value: 6.0 }];
+  const indexRows = [{ time: '1998-08-31', value: 957.28 }, { time: '2000-08-31', value: 1500.0 }];
+  assert.equal(matchesDirection(pivot, 'TROUGH', pivots, rows, cycle, indexRows), true);
+});
+
+
 
 
 

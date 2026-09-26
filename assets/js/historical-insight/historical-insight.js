@@ -584,7 +584,8 @@
     }
 
     const end = owner === 'START' ? cycle.peakDate : owner === 'PEAK' ? cycle.troughDate : bufferEnd?.toISOString().slice(0, 10);
-    const next = pivots.find(candidate => candidate.pivotDate > (owner === 'TROUGH' ? cycle.troughDate : pivot.pivotDate) && candidate.pivotDate <= end);
+    const nextPivotStart = owner === 'TROUGH' ? (pivot.pivotDate > cycle.troughDate ? pivot.pivotDate : cycle.troughDate) : pivot.pivotDate;
+    const next = pivots.find(candidate => candidate.pivotDate > nextPivotStart && candidate.pivotDate <= end);
     const to = next?.pivotDate || (owner === 'TROUGH' ? [...rows].reverse().find(row => row.time <= end)?.time : end);
     if (!to || to <= pivot.pivotDate) return false;
 
