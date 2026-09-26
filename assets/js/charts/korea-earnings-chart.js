@@ -231,7 +231,26 @@
       ? `<circle data-korea-earnings-point="${metric.key}" data-point-index="${index}" cx="${x(index)}" cy="${y(point.value)}" r="${spec.kind === 'amount' ? 2.8 : 2.4}" class="korea-earnings-point korea-earnings-point--${metric.className}"/>` : '')).join('');
     const clipId = `earnings-plot-${market.marketId}-${spec.key}`;
     const plotClip = `<defs><clipPath id="${clipId}"><rect x="${padding.left}" y="${padding.top}" width="${chartWidth - padding.left - padding.right}" height="${spec.height - padding.top - padding.bottom}"/></clipPath></defs>`;
-    const { frame } = chartUtils.mountChartFrame({ container, profile: PROFILE, height: spec.height, axisViewWidth: AXIS_WIDTH, top: padding.top, bottom: padding.bottom, xAxisMode: spec.kind === 'amount' ? 'bottom' : 'none', showScrollbar: spec.kind === 'amount', leftAxisMarkup: axis, ariaLabel: `영업이익·순이익 ${spec.kind} 시계열`, plotMarkup: `<svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">${plotClip}${grids}${labels}<g clip-path="url(#${clipId})">${lines}${dots}</g><rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent"/></svg>` });
+    const { frame } = chartUtils.mountChartFrame({
+      container,
+      profile: PROFILE,
+      height: spec.height,
+      axisViewWidth: AXIS_WIDTH,
+      top: padding.top, bottom: padding.bottom,
+      xAxisMode: spec.kind === 'amount' ? 'bottom' : 'none',
+      showScrollbar: spec.kind === 'amount',
+      leftAxisMarkup: axis,
+      ariaLabel: `영업이익·순이익 ${spec.kind} 시계열`,
+      plotMarkup: `
+        <svg class="korea-earnings-chart-svg" width="${chartWidth}" height="${spec.height}" viewBox="0 0 ${chartWidth} ${spec.height}" role="img" aria-label="영업이익·순이익 ${spec.kind} 시계열">
+          ${plotClip}
+          ${grids}
+          ${labels}
+          <g clip-path="url(#${clipId})">${lines}${dots}</g>
+          <rect x="0" y="0" width="${chartWidth}" height="${spec.height}" fill="transparent"/>
+        </svg>
+      `.trim()
+    });
     const yLabels = [...container.querySelectorAll('[data-korea-earnings-y-label]')];
     const yGrids = [...container.querySelectorAll('[data-korea-earnings-y-grid]')];
     const lineElements = new Map(METRICS.map((metric) => [metric.key, [...container.querySelectorAll(`[data-korea-earnings-line="${metric.key}"]`)]]));

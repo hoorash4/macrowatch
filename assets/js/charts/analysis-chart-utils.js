@@ -841,5 +841,46 @@ function monotoneStyledSegments(rows, xFor, yFor, styleForPair) {
     });
   }
 
-  window.MacroWatchAnalysisChart = { DEFAULT_RANGE_YEARS, chartLayout, plotPadding, chartProfile, chartProfiles, cursorValueText, formatChartNumber, formatAxisNumber, roundAxisTick, alignedSecondaryTicks, mountChartFrame, updateFixedAxis, attachChartCursor, axisGutter, axisLayouts, chartPadding, chartFrameWidth, scrollTrackWidth, positionCursorText, primarySeriesWindow, lineWidths, seriesStyles, legendItem, setChartLegend, initializeLegends, monotoneSeriesPath, monotoneStyledSegments, niceStep, axisDomain, axisTicks, niceAxisDomain, visibleAxisDomain, historyWidth, scrollableSvg, timelineWidth, rowsForRecentHistory, scrollToLatest, loadAllRows, monotonePath, monotonePathSegments };
+  window.MacroWatchAnalysisChart = {
+    DEFAULT_RANGE_YEARS,
+    chartLayout,
+    plotPadding,
+    chartProfile,
+    chartProfiles,
+    cursorValueText,
+    formatChartNumber,
+    formatAxisNumber,
+    roundAxisTick,
+    alignedSecondaryTicks,
+    mountChartFrame,
+    updateFixedAxis,
+    attachChartCursor,
+    axisGutter,
+    axisLayouts,
+    chartPadding,
+    chartFrameWidth,
+    scrollTrackWidth,
+    positionCursorText,
+    primarySeriesWindow,
+    lineWidths,
+    seriesStyles,
+    legendItem,
+    setChartLegend,
+    initializeLegends,
+    monotoneSeriesPath,
+    monotoneStyledSegments,
+    niceStep,
+    axisDomain,
+    axisTicks,
+    niceAxisDomain,
+    visibleAxisDomain,
+    historyWidth,
+    scrollableSvg,
+    timelineWidth,
+    rowsForRecentHistory,
+    scrollToLatest,
+    loadAllRows,
+    monotonePath,
+    monotonePathSegments
+  };
 })();

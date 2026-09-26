@@ -139,4 +139,3 @@
 
   window.MacroWatchHistoricalCycles = Object.freeze({ caseFields, marketFields, currentSettingsFields, normalizeCase, normalizeMarket, createRepository, marketCycle, calculate, chartPoints });
 })();
-

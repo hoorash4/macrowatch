@@ -246,7 +246,7 @@
     return (
       `<article class="border-b border-slate-800 p-3 last:border-0">` +
       `<form data-member-id="${escapeHtml(item.user_id)}" autocomplete="off" class="member-row-grid grid gap-2">` +
-      `<input name="username" value="${usernameValue}" required minlength="4" maxlength="32" autocomplete="off" placeholder="${usernamePlaceholder}" class="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm placeholder:text-yellow-600">` +
+      `<input name="username" value="${usernameValue}" required minlength="4" maxlength="32" autocomplete="off" placeholder="${usernamePlaceholder}" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm placeholder:text-yellow-600">` +
       `<input name="password" type="password" readonly data-admin-credential data-clear-on-activate data-autocomplete-token="one-time-code" autocomplete="one-time-code" placeholder="변경할 비밀번호 (선택)" class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm">` +
       `<label class="flex items-center gap-2 px-2 text-xs">` +
       `<input name="is_admin" type="checkbox" ${adminChecked} ${adminDisabled} class="accent-blue-500 disabled:opacity-60">관리자` +

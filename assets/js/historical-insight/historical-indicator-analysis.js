@@ -1,231 +1,2280 @@
 (() => {
   'use strict';
-  const DAY=86400000,REFERENCE_ORDER=Object.freeze(['START','PEAK','TROUGH']);
-  const ANALYSIS_POLICY=Object.freeze({
-    minimumRegimeDays:Object.freeze({short:31,medium:61,long:92}),marketDurationDays:Object.freeze({shortMax:92,mediumMax:183,shortCycle:365}),
-    relevanceMonths:Object.freeze({before:3,after:1}),nearMiss:Object.freeze({enabled:true,before:6,after:2}),current:Object.freeze({minimumRegimeDays:92}),
-    scale:Object.freeze({noiseMultiplier:2.5,rangeFraction:.015,minimumFraction:.002,sidewaysEfficiency:.35}),correction:Object.freeze({maximumRetracementFraction:.5,maximumVolatilityUnits:3}),resumption:Object.freeze({minimumDurationRatio:2,minimumMoveRatio:1.5}),transient:Object.freeze({maximumDurationShare:.25,minimumProminenceUnits:1}),smoothingPoints:Object.freeze({D:5,W:3,T:3,M:2,Q:1,E:2}),
-    structuralEvidenceDays:Object.freeze({D:14,W:21,T:21,M:31,Q:92,E:31}),
-    referenceWeights:Object.freeze({structural:.45,timing:.35,duration:.2}),relationship:Object.freeze({windowMonths:12,minimumPairs:4,minimumAbsoluteCorrelation:.45,minimumSignStability:.6,maximumBonus:10,lags:Object.freeze({D:Object.freeze([0,5,10,20]),W:Object.freeze([0,1,2,4]),T:Object.freeze([0,1,2,4]),M:Object.freeze([0,1,2,3]),Q:Object.freeze([0,1]),E:Object.freeze([0,1,2,3])})}),
-    overallWeights:Object.freeze({best:.7,mean:.3}),coverageBonusByCount:Object.freeze({1:0,2:12,3:25}),cycleRelationship:Object.freeze({minimumDominanceShare:.6}),pivotSelection:Object.freeze({structuralSimilarityPoints:5}),
-    currentScoring:Object.freeze({watchMaximum:10,candidateMaximum:45,structuralOnlyMaximum:65,marketRelevantMaximum:100,synergyPerPeer:6,synergyMaximum:18}),
-    synergyMonths:Object.freeze({before:1,after:1})
+
+  const DAY = 86400000;
+  const REFERENCE_ORDER = Object.freeze(['START', 'PEAK', 'TROUGH']);
+
+  const ANALYSIS_POLICY = Object.freeze({
+    minimumRegimeDays: Object.freeze({ short: 31, medium: 61, long: 92 }),
+    marketDurationDays: Object.freeze({ shortMax: 92, mediumMax: 183, shortCycle: 365 }),
+    relevanceMonths: Object.freeze({ before: 3, after: 1 }),
+    nearMiss: Object.freeze({ enabled: true, before: 6, after: 2 }),
+    current: Object.freeze({ minimumRegimeDays: 92 }),
+    scale: Object.freeze({ noiseMultiplier: 2.5, rangeFraction: 0.015, minimumFraction: 0.002, sidewaysEfficiency: 0.35 }),
+    correction: Object.freeze({ maximumRetracementFraction: 0.5, maximumVolatilityUnits: 3 }),
+    resumption: Object.freeze({ minimumDurationRatio: 2, minimumMoveRatio: 1.5 }),
+    transient: Object.freeze({ maximumDurationShare: 0.25, minimumProminenceUnits: 1 }),
+    smoothingPoints: Object.freeze({ D: 5, W: 3, T: 3, M: 2, Q: 1, E: 2 }),
+    structuralEvidenceDays: Object.freeze({ D: 14, W: 21, T: 21, M: 31, Q: 92, E: 31 }),
+    referenceWeights: Object.freeze({ structural: 0.45, timing: 0.35, duration: 0.2 }),
+    relationship: Object.freeze({
+      windowMonths: 12,
+      minimumPairs: 4,
+      minimumAbsoluteCorrelation: 0.45,
+      minimumSignStability: 0.6,
+      maximumBonus: 10,
+      lags: Object.freeze({
+        D: Object.freeze([0, 5, 10, 20]),
+        W: Object.freeze([0, 1, 2, 4]),
+        T: Object.freeze([0, 1, 2, 4]),
+        M: Object.freeze([0, 1, 2, 3]),
+        Q: Object.freeze([0, 1]),
+        E: Object.freeze([0, 1, 2, 3]),
+      }),
+    }),
+    overallWeights: Object.freeze({ best: 0.7, mean: 0.3 }),
+    coverageBonusByCount: Object.freeze({ 1: 0, 2: 12, 3: 25 }),
+    cycleRelationship: Object.freeze({ minimumDominanceShare: 0.6 }),
+    pivotSelection: Object.freeze({ structuralSimilarityPoints: 5 }),
+    currentScoring: Object.freeze({
+      watchMaximum: 10,
+      candidateMaximum: 45,
+      structuralOnlyMaximum: 65,
+      marketRelevantMaximum: 100,
+      synergyPerPeer: 6,
+      synergyMaximum: 18,
+    }),
+    synergyMonths: Object.freeze({ before: 1, after: 1 }),
   });
-  const dayNumber=value=>Math.floor(Date.parse(`${value}T00:00:00Z`)/DAY),daysBetween=(a,b)=>dayNumber(b)-dayNumber(a);
-  function shiftMonths(value,amount){const [year,month,day]=value.split('-').map(Number),target=new Date(Date.UTC(year,month-1+amount,1)),lastDay=new Date(Date.UTC(target.getUTCFullYear(),target.getUTCMonth()+1,0)).getUTCDate();target.setUTCDate(Math.min(day,lastDay));return target.toISOString().slice(0,10);}
-  function displayWindow(item,cycle,latestDate){const start=cycle.startDate||item.searchStart;return Object.freeze({from:shiftMonths(start,-24),to:cycle.troughDate?shiftMonths(cycle.troughDate,24):(latestDate||cycle.peakDate||start)});}
-  const validRows=rows=>rows.filter(row=>/^\d{4}-\d{2}-\d{2}$/.test(row.time)&&Number.isFinite(row.value)).sort((a,b)=>a.time.localeCompare(b.time));
-  const median=values=>{if(!values.length)return 0;const sorted=[...values].sort((a,b)=>a-b),middle=Math.floor(sorted.length/2);return sorted.length%2?sorted[middle]:(sorted[middle-1]+sorted[middle])/2;};
-  function smoothRows(rows,frequency='M'){const width=ANALYSIS_POLICY.smoothingPoints[frequency]||2;if(width<=1)return rows.map(row=>({...row,smoothedValue:row.value}));return rows.map((row,index)=>({...row,smoothedValue:median(rows.slice(Math.max(0,index-width+1),index+1).map(item=>item.value))}));}
-  function scaleThreshold(rows){if(rows.length<2)return 0;const recentFrom=shiftMonths(rows.at(-1).time,-24),sample=rows.filter(row=>row.time>=recentFrom),basis=sample.length>=2?sample:rows,values=basis.map(row=>row.smoothedValue),diffs=values.slice(1).map((value,index)=>Math.abs(value-values[index])),noise=median(diffs),range=Math.max(...values)-Math.min(...values),level=Math.max(median(values.map(Math.abs)),1e-9),p=ANALYSIS_POLICY.scale;return Math.max(noise*p.noiseMultiplier,range*p.rangeFraction,level*p.minimumFraction,1e-9);}
-  function requiredMinimumRegimeDays(marketDays){const p=ANALYSIS_POLICY;if(!Number.isFinite(marketDays)||marketDays>p.marketDurationDays.mediumMax)return p.minimumRegimeDays.long;if(marketDays<=p.marketDurationDays.shortMax)return p.minimumRegimeDays.short;return p.minimumRegimeDays.medium;}
-  function marketDuration(referenceType,cycle){if(referenceType==='START'&&cycle.startDate&&cycle.peakDate)return daysBetween(cycle.startDate,cycle.peakDate);if((referenceType==='PEAK'||referenceType==='TROUGH')&&cycle.peakDate&&cycle.troughDate)return daysBetween(cycle.peakDate,cycle.troughDate);return null;}
-  function relevanceWindow(referenceDate){const p=ANALYSIS_POLICY.relevanceMonths,from=shiftMonths(referenceDate,-p.before),to=shiftMonths(referenceDate,p.after);return Object.freeze({from,to,before:daysBetween(from,referenceDate),after:daysBetween(referenceDate,to)});}
-  function nearMissWindow(referenceDate){const p=ANALYSIS_POLICY.nearMiss,from=shiftMonths(referenceDate,-p.before),to=shiftMonths(referenceDate,p.after);return Object.freeze({from,to,before:daysBetween(from,referenceDate),after:daysBetween(referenceDate,to)});}
-  const structuralEvidenceDays=frequency=>ANALYSIS_POLICY.structuralEvidenceDays[frequency]||ANALYSIS_POLICY.structuralEvidenceDays.M;
-  function rawExtremeIndex(raw,from,to,type,preferLatest=false){let selected=from;for(let index=from+1;index<=to;index++){const better=type==='rising'?raw[index].value>raw[selected].value:raw[index].value<raw[selected].value,equal=raw[index].value===raw[selected].value;if(better||(preferLatest&&equal))selected=index;}return selected;}
-  function departurePivotIndex(raw,data,rangeStart,breakoutIndex,nextType){let start=breakoutIndex,found=false;for(let index=breakoutIndex-1;index>=rangeStart;index--){const values=data.slice(index,breakoutIndex+1).map(row=>row.smoothedValue),travel=values.slice(1).reduce((sum,value,offset)=>sum+Math.abs(value-values[offset]),0),net=values.at(-1)-values[0],directional=nextType==='rising'?net>0:net<0,efficiency=travel?Math.abs(net)/travel:0;if(directional&&efficiency>ANALYSIS_POLICY.scale.sidewaysEfficiency){start=index;found=true;continue;}if(found)break;}return rawExtremeIndex(raw,start,breakoutIndex,nextType==='rising'?'falling':'rising',true);}
-  function pivotFields(raw,pivotIndex,confirmationIndex,previousRegime,nextRegime,breakoutIndex=null){const point=raw[pivotIndex],confirmation=raw[confirmationIndex],breakout=breakoutIndex==null?null:raw[breakoutIndex],evidenceType=breakout?(nextRegime==='rising'?'range_breakout':'range_breakdown'):'structural_persistence';return{pivotDate:point.time,pivotValue:point.value,regimeBoundaryDate:point.time,breakoutOrBreakdownDate:breakout?.time||null,confirmationDate:confirmation.time,confirmationEvidence:Object.freeze({type:evidenceType,eventDate:breakout?.time||confirmation.time,confirmedAt:confirmation.time})};}
-  function pathDirection(rows,from,to,threshold){if(to<=from)return'sideways';const values=rows.slice(from,to+1).map(row=>row.value),net=values.at(-1)-values[0],travel=values.slice(1).reduce((sum,value,index)=>sum+Math.abs(value-values[index]),0),efficiency=travel?Math.abs(net)/travel:0;if(Math.abs(net)<threshold*.5||efficiency<=ANALYSIS_POLICY.scale.sidewaysEfficiency*.75)return'sideways';return net>0?'rising':'falling';}
-  function transientExtreme(raw,index,from,to,turn,threshold,minimumRegimeDays){
-    if(index<=from||index>=raw.length-1)return false;
-    const nextDirection=turn==='high'?'falling':'rising',candidate=raw[index].value,recoveryIndex=raw.findIndex((row,candidateIndex)=>candidateIndex>index&&(turn==='high'?candidate-row.value>=threshold:row.value-candidate>=threshold));if(recoveryIndex<=index)return false;
-    let validationEnd=Math.max(to,recoveryIndex);while(validationEnd<raw.length-1&&daysBetween(raw[recoveryIndex].time,raw[validationEnd].time)<minimumRegimeDays)validationEnd++;if(daysBetween(raw[recoveryIndex].time,raw[validationEnd].time)<minimumRegimeDays)return false;
-    const preDirection=pathDirection(raw,from,index-1,threshold),postDirection=pathDirection(raw,recoveryIndex,validationEnd,threshold),prominence=Math.min(Math.abs(candidate-raw[index-1].value),Math.abs(candidate-raw[recoveryIndex].value)),excursionDays=Math.max(1,daysBetween(raw[index].time,raw[recoveryIndex].time)),contextDays=Math.max(1,daysBetween(raw[from].time,raw[validationEnd].time)),shortRelative=excursionDays/contextDays<=ANALYSIS_POLICY.transient.maximumDurationShare,quickRecovery=excursionDays<minimumRegimeDays,assignedTransitionMissing=preDirection===postDirection||postDirection!==nextDirection;return shortRelative&&quickRecovery&&assignedTransitionMissing&&prominence>=threshold*ANALYSIS_POLICY.transient.minimumProminenceUnits;
+
+  const dayNumber = (value) => Math.floor(Date.parse(`${value}T00:00:00Z`) / DAY);
+  const daysBetween = (a, b) => dayNumber(b) - dayNumber(a);
+
+  function shiftMonths(value, amount) {
+    const [year, month, day] = value.split('-').map(Number);
+    const target = new Date(Date.UTC(year, month - 1 + amount, 1));
+    const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+    target.setUTCDate(Math.min(day, lastDay));
+    return target.toISOString().slice(0, 10);
   }
-  function resumptionDominates({excursionDays,resumptionDays,excursionMove,resumptionMove,madeNewExtreme,longTermDirection}){const p=ANALYSIS_POLICY.resumption;return madeNewExtreme&&longTermDirection&&resumptionDays>=Math.max(1,excursionDays)*p.minimumDurationRatio&&resumptionMove>=Math.max(excursionMove,1e-9)*p.minimumMoveRatio;}
-  function retrospectiveExtremePivots(rows,{frequency='M',minimumRegimeDays=31}={}){
-    const raw=validRows(rows),data=smoothRows(raw,frequency);if(raw.length<3)return Object.freeze([]);
-    const threshold=scaleThreshold(data),travel=[0],before=[],after=[];
-    for(let index=1;index<data.length;index++)travel[index]=travel[index-1]+Math.abs(data[index].smoothedValue-data[index-1].smoothedValue);
-    let left=0;for(let index=0;index<raw.length;index++){while(left+1<index&&daysBetween(raw[left+1].time,raw[index].time)>=minimumRegimeDays)left++;before[index]=daysBetween(raw[left].time,raw[index].time)>=minimumRegimeDays?left:-1;}
-    let right=raw.length-1;for(let index=raw.length-1;index>=0;index--){while(right-1>index&&daysBetween(raw[index].time,raw[right-1].time)>=minimumRegimeDays)right--;after[index]=daysBetween(raw[index].time,raw[right].time)>=minimumRegimeDays?right:-1;}
-    const pivots=[];
-    for(let index=1;index<raw.length-1;index++){
-      const baseFrom=before[index],baseTo=after[index];if(baseFrom<0||baseTo<0)continue;
-      const localHigh=rawExtremeIndex(raw,baseFrom,baseTo,'rising')===index,localLow=rawExtremeIndex(raw,baseFrom,baseTo,'falling')===index;if(!localHigh&&!localLow)continue;
-      let from=baseFrom,to=baseTo;
-      if(localHigh){while(from>0&&raw[index].value-data[from].smoothedValue<threshold)from--;while(to<raw.length-1&&data[to].smoothedValue-raw[index].value>-threshold)to++;}
-      if(localLow){while(from>0&&raw[index].value-data[from].smoothedValue>-threshold)from--;while(to<raw.length-1&&data[to].smoothedValue-raw[index].value<threshold)to++;}
-      const high=localHigh&&rawExtremeIndex(raw,from,to,'rising')===index,low=localLow&&rawExtremeIndex(raw,from,to,'falling')===index,preNet=raw[index].value-data[from].smoothedValue,postNet=data[to].smoothedValue-raw[index].value,turn=high&&preNet>=threshold&&postNet<=-threshold?'high':low&&preNet<=-threshold&&postNet>=threshold?'low':null;if(!turn)continue;
-      const preTravel=travel[index]-travel[from],postTravel=travel[to]-travel[index],preEfficiency=preTravel?Math.abs(preNet)/preTravel:0,postEfficiency=postTravel?Math.abs(postNet)/postTravel:0;if(preEfficiency<=ANALYSIS_POLICY.scale.sidewaysEfficiency||postEfficiency<=ANALYSIS_POLICY.scale.sidewaysEfficiency||transientExtreme(raw,index,from,to,turn,threshold,minimumRegimeDays))continue;
-      const resumedIndex=raw.findIndex((row,candidateIndex)=>candidateIndex>to&&(turn==='high'?row.value>raw[index].value+threshold:row.value<raw[index].value-threshold)),pathEnd=resumedIndex>to?resumedIndex:raw.length,postValues=raw.slice(index+1,pathEnd).map(row=>row.value),adverseExtreme=turn==='high'?Math.min(...postValues):Math.max(...postValues),priorAdvance=Math.abs(raw[index].value-raw[from].value),retracement=Math.abs(raw[index].value-adverseExtreme),structuralDamage=retracement>=Math.max(priorAdvance*ANALYSIS_POLICY.correction.maximumRetracementFraction,threshold*ANALYSIS_POLICY.correction.maximumVolatilityUnits);if(resumedIndex>to){const adverseIndex=rawExtremeIndex(raw,index+1,resumedIndex,turn==='high'?'falling':'rising'),resumedValues=raw.slice(adverseIndex),resumedExtreme=turn==='high'?Math.max(...resumedValues.map(row=>row.value)):Math.min(...resumedValues.map(row=>row.value)),dominant=resumptionDominates({excursionDays:daysBetween(raw[index].time,raw[adverseIndex].time),resumptionDays:daysBetween(raw[adverseIndex].time,raw.at(-1).time),excursionMove:retracement,resumptionMove:Math.abs(resumedExtreme-raw[adverseIndex].value),madeNewExtreme:turn==='high'?resumedExtreme>raw[index].value+threshold:resumedExtreme<raw[index].value-threshold,longTermDirection:pathDirection(raw,adverseIndex,raw.length-1,threshold)===(turn==='high'?'rising':'falling')});if(!structuralDamage||dominant)continue;}
-      const previousRegime=turn==='high'?'rising':'falling',nextRegime=turn==='high'?'falling':'rising';pivots.push(Object.freeze({...pivotFields(raw,index,to,previousRegime,nextRegime),previousRegime,nextRegime,pivotType:'extreme',requiredMinimumDays:minimumRegimeDays,confirmed:true,durationBefore:daysBetween(raw[from].time,raw[index].time),durationAfter:daysBetween(raw[index].time,raw[to].time),validationSource:'retrospective_full_path'}));
+
+  function displayWindow(item, cycle, latestDate) {
+    const start = cycle.startDate || item.searchStart;
+    return Object.freeze({
+      from: shiftMonths(start, -24),
+      to: cycle.troughDate ? shiftMonths(cycle.troughDate, 24) : (latestDate || cycle.peakDate || start),
+    });
+  }
+
+  const validRows = (rows) => {
+    return rows
+      .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(row.time) && Number.isFinite(row.value))
+      .sort((a, b) => a.time.localeCompare(b.time));
+  };
+
+  const median = (values) => {
+    if (!values.length) {
+      return 0;
     }
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    if (sorted.length % 2) {
+      return sorted[middle];
+    }
+    return (sorted[middle - 1] + sorted[middle]) / 2;
+  };
+
+  function smoothRows(rows, frequency = 'M') {
+    const width = ANALYSIS_POLICY.smoothingPoints[frequency] || 2;
+    if (width <= 1) {
+      return rows.map((row) => ({ ...row, smoothedValue: row.value }));
+    }
+    return rows.map((row, index) => {
+      const windowItems = rows.slice(Math.max(0, index - width + 1), index + 1);
+      return {
+        ...row,
+        smoothedValue: median(windowItems.map((item) => item.value)),
+      };
+    });
+  }
+
+  function scaleThreshold(rows) {
+    if (rows.length < 2) {
+      return 0;
+    }
+    const recentFrom = shiftMonths(rows.at(-1).time, -24);
+    const sample = rows.filter((row) => row.time >= recentFrom);
+    const basis = sample.length >= 2 ? sample : rows;
+    const values = basis.map((row) => row.smoothedValue);
+    const diffs = values.slice(1).map((val, index) => Math.abs(val - values[index]));
+    const noise = median(diffs);
+    const range = Math.max(...values) - Math.min(...values);
+    const level = Math.max(median(values.map(Math.abs)), 1e-9);
+    const p = ANALYSIS_POLICY.scale;
+    return Math.max(noise * p.noiseMultiplier, range * p.rangeFraction, level * p.minimumFraction, 1e-9);
+  }
+
+  function requiredMinimumRegimeDays(marketDays) {
+    const p = ANALYSIS_POLICY;
+    if (!Number.isFinite(marketDays) || marketDays > p.marketDurationDays.mediumMax) {
+      return p.minimumRegimeDays.long;
+    }
+    if (marketDays <= p.marketDurationDays.shortMax) {
+      return p.minimumRegimeDays.short;
+    }
+    return p.minimumRegimeDays.medium;
+  }
+
+  function marketDuration(referenceType, cycle) {
+    if (referenceType === 'START' && cycle.startDate && cycle.peakDate) {
+      return daysBetween(cycle.startDate, cycle.peakDate);
+    }
+    if ((referenceType === 'PEAK' || referenceType === 'TROUGH') && cycle.peakDate && cycle.troughDate) {
+      return daysBetween(cycle.peakDate, cycle.troughDate);
+    }
+    return null;
+  }
+
+  function relevanceWindow(referenceDate) {
+    const p = ANALYSIS_POLICY.relevanceMonths;
+    const from = shiftMonths(referenceDate, -p.before);
+    const to = shiftMonths(referenceDate, p.after);
+    return Object.freeze({
+      from,
+      to,
+      before: daysBetween(from, referenceDate),
+      after: daysBetween(referenceDate, to),
+    });
+  }
+
+  function nearMissWindow(referenceDate) {
+    const p = ANALYSIS_POLICY.nearMiss;
+    const from = shiftMonths(referenceDate, -p.before);
+    const to = shiftMonths(referenceDate, p.after);
+    return Object.freeze({
+      from,
+      to,
+      before: daysBetween(from, referenceDate),
+      after: daysBetween(referenceDate, to),
+    });
+  }
+
+  const structuralEvidenceDays = (frequency) => {
+    return ANALYSIS_POLICY.structuralEvidenceDays[frequency] || ANALYSIS_POLICY.structuralEvidenceDays.M;
+  };
+
+  function rawExtremeIndex(raw, from, to, type, preferLatest = false) {
+    let selected = from;
+    for (let index = from + 1; index <= to; index++) {
+      const better = type === 'rising'
+        ? raw[index].value > raw[selected].value
+        : raw[index].value < raw[selected].value;
+      const equal = raw[index].value === raw[selected].value;
+      if (better || (preferLatest && equal)) {
+        selected = index;
+      }
+    }
+    return selected;
+  }
+
+  function departurePivotIndex(raw, data, rangeStart, breakoutIndex, nextType) {
+    let start = breakoutIndex;
+    let found = false;
+    for (let index = breakoutIndex - 1; index >= rangeStart; index--) {
+      const values = data.slice(index, breakoutIndex + 1).map((row) => row.smoothedValue);
+      const travel = values.slice(1).reduce((sum, val, offset) => sum + Math.abs(val - values[offset]), 0);
+      const net = values.at(-1) - values[0];
+      const directional = nextType === 'rising' ? net > 0 : net < 0;
+      const efficiency = travel ? Math.abs(net) / travel : 0;
+      if (directional && efficiency > ANALYSIS_POLICY.scale.sidewaysEfficiency) {
+        start = index;
+        found = true;
+        continue;
+      }
+      if (found) {
+        break;
+      }
+    }
+    return rawExtremeIndex(raw, start, breakoutIndex, nextType === 'rising' ? 'falling' : 'rising', true);
+  }
+
+  function pivotFields(raw, pivotIndex, confirmationIndex, previousRegime, nextRegime, breakoutIndex = null) {
+    const point = raw[pivotIndex];
+    const confirmation = raw[confirmationIndex];
+    const breakout = breakoutIndex == null ? null : raw[breakoutIndex];
+    const evidenceType = breakout
+      ? (nextRegime === 'rising' ? 'range_breakout' : 'range_breakdown')
+      : 'structural_persistence';
+
+    return {
+      pivotDate: point.time,
+      pivotValue: point.value,
+      regimeBoundaryDate: point.time,
+      breakoutOrBreakdownDate: breakout?.time || null,
+      confirmationDate: confirmation.time,
+      confirmationEvidence: Object.freeze({
+        type: evidenceType,
+        eventDate: breakout?.time || confirmation.time,
+        confirmedAt: confirmation.time,
+      }),
+    };
+  }
+
+  function pathDirection(rows, from, to, threshold) {
+    if (to <= from) {
+      return 'sideways';
+    }
+    const values = rows.slice(from, to + 1).map((row) => row.value);
+    const net = values.at(-1) - values[0];
+    const travel = values.slice(1).reduce((sum, val, index) => sum + Math.abs(val - values[index]), 0);
+    const efficiency = travel ? Math.abs(net) / travel : 0;
+    if (Math.abs(net) < threshold * 0.5 || efficiency <= ANALYSIS_POLICY.scale.sidewaysEfficiency * 0.75) {
+      return 'sideways';
+    }
+    return net > 0 ? 'rising' : 'falling';
+  }
+
+  function transientExtreme(raw, index, from, to, turn, threshold, minimumRegimeDays) {
+    if (index <= from || index >= raw.length - 1) {
+      return false;
+    }
+    const nextDirection = turn === 'high' ? 'falling' : 'rising';
+    const candidate = raw[index].value;
+    const recoveryIndex = raw.findIndex((row, candidateIndex) => {
+      return candidateIndex > index && (turn === 'high' ? candidate - row.value >= threshold : row.value - candidate >= threshold);
+    });
+    if (recoveryIndex <= index) {
+      return false;
+    }
+
+    let validationEnd = Math.max(to, recoveryIndex);
+    while (validationEnd < raw.length - 1 && daysBetween(raw[recoveryIndex].time, raw[validationEnd].time) < minimumRegimeDays) {
+      validationEnd++;
+    }
+    if (daysBetween(raw[recoveryIndex].time, raw[validationEnd].time) < minimumRegimeDays) {
+      return false;
+    }
+
+    const preDirection = pathDirection(raw, from, index - 1, threshold);
+    const postDirection = pathDirection(raw, recoveryIndex, validationEnd, threshold);
+    const prominence = Math.min(
+      Math.abs(candidate - raw[index - 1].value),
+      Math.abs(candidate - raw[recoveryIndex].value),
+    );
+    const excursionDays = Math.max(1, daysBetween(raw[index].time, raw[recoveryIndex].time));
+    const contextDays = Math.max(1, daysBetween(raw[from].time, raw[validationEnd].time));
+    const shortRelative = excursionDays / contextDays <= ANALYSIS_POLICY.transient.maximumDurationShare;
+    const quickRecovery = excursionDays < minimumRegimeDays;
+    const assignedTransitionMissing = preDirection === postDirection || postDirection !== nextDirection;
+
+    return shortRelative && quickRecovery && assignedTransitionMissing && prominence >= threshold * ANALYSIS_POLICY.transient.minimumProminenceUnits;
+  }
+
+  function resumptionDominates({ excursionDays, resumptionDays, excursionMove, resumptionMove, madeNewExtreme, longTermDirection }) {
+    const p = ANALYSIS_POLICY.resumption;
+    return madeNewExtreme
+      && longTermDirection
+      && resumptionDays >= Math.max(1, excursionDays) * p.minimumDurationRatio
+      && resumptionMove >= Math.max(excursionMove, 1e-9) * p.minimumMoveRatio;
+  }
+
+  function retrospectiveExtremePivots(rows, { frequency = 'M', minimumRegimeDays = 31 } = {}) {
+    const raw = validRows(rows);
+    const data = smoothRows(raw, frequency);
+    if (raw.length < 3) {
+      return Object.freeze([]);
+    }
+
+    const threshold = scaleThreshold(data);
+    const travel = [0];
+    const before = [];
+    const after = [];
+
+    for (let index = 1; index < data.length; index++) {
+      travel[index] = travel[index - 1] + Math.abs(data[index].smoothedValue - data[index - 1].smoothedValue);
+    }
+
+    let left = 0;
+    for (let index = 0; index < raw.length; index++) {
+      while (left + 1 < index && daysBetween(raw[left + 1].time, raw[index].time) >= minimumRegimeDays) {
+        left++;
+      }
+      before[index] = daysBetween(raw[left].time, raw[index].time) >= minimumRegimeDays ? left : -1;
+    }
+
+    let right = raw.length - 1;
+    for (let index = raw.length - 1; index >= 0; index--) {
+      while (right - 1 > index && daysBetween(raw[index].time, raw[right - 1].time) >= minimumRegimeDays) {
+        right--;
+      }
+      after[index] = daysBetween(raw[index].time, raw[right].time) >= minimumRegimeDays ? right : -1;
+    }
+
+    const pivots = [];
+    for (let index = 1; index < raw.length - 1; index++) {
+      const baseFrom = before[index];
+      const baseTo = after[index];
+      if (baseFrom < 0 || baseTo < 0) {
+        continue;
+      }
+
+      const localHigh = rawExtremeIndex(raw, baseFrom, baseTo, 'rising') === index;
+      const localLow = rawExtremeIndex(raw, baseFrom, baseTo, 'falling') === index;
+      if (!localHigh && !localLow) {
+        continue;
+      }
+
+      let from = baseFrom;
+      let to = baseTo;
+      if (localHigh) {
+        while (from > 0 && raw[index].value - data[from].smoothedValue < threshold) {
+          from--;
+        }
+        while (to < raw.length - 1 && data[to].smoothedValue - raw[index].value > -threshold) {
+          to++;
+        }
+      }
+      if (localLow) {
+        while (from > 0 && raw[index].value - data[from].smoothedValue > -threshold) {
+          from--;
+        }
+        while (to < raw.length - 1 && data[to].smoothedValue - raw[index].value < threshold) {
+          to++;
+        }
+      }
+
+      const high = localHigh && rawExtremeIndex(raw, from, to, 'rising') === index;
+      const low = localLow && rawExtremeIndex(raw, from, to, 'falling') === index;
+      const preNet = raw[index].value - data[from].smoothedValue;
+      const postNet = data[to].smoothedValue - raw[index].value;
+      const turn = high && preNet >= threshold && postNet <= -threshold
+        ? 'high'
+        : low && preNet <= -threshold && postNet >= threshold
+          ? 'low'
+          : null;
+
+      if (!turn) {
+        continue;
+      }
+
+      const preTravel = travel[index] - travel[from];
+      const postTravel = travel[to] - travel[index];
+      const preEfficiency = preTravel ? Math.abs(preNet) / preTravel : 0;
+      const postEfficiency = postTravel ? Math.abs(postNet) / postTravel : 0;
+
+      if (preEfficiency <= ANALYSIS_POLICY.scale.sidewaysEfficiency
+        || postEfficiency <= ANALYSIS_POLICY.scale.sidewaysEfficiency
+        || transientExtreme(raw, index, from, to, turn, threshold, minimumRegimeDays)) {
+        continue;
+      }
+
+      const resumedIndex = raw.findIndex((row, candidateIndex) => {
+        return candidateIndex > to && (turn === 'high' ? row.value > raw[index].value + threshold : row.value < raw[index].value - threshold);
+      });
+      const pathEnd = resumedIndex > to ? resumedIndex : raw.length;
+      const postValues = raw.slice(index + 1, pathEnd).map((row) => row.value);
+      const adverseExtreme = turn === 'high' ? Math.min(...postValues) : Math.max(...postValues);
+      const priorAdvance = Math.abs(raw[index].value - raw[from].value);
+      const retracement = Math.abs(raw[index].value - adverseExtreme);
+      const structuralDamage = retracement >= Math.max(
+        priorAdvance * ANALYSIS_POLICY.correction.maximumRetracementFraction,
+        threshold * ANALYSIS_POLICY.correction.maximumVolatilityUnits,
+      );
+
+      if (resumedIndex > to) {
+        const adverseIndex = rawExtremeIndex(raw, index + 1, resumedIndex, turn === 'high' ? 'falling' : 'rising');
+        const resumedValues = raw.slice(adverseIndex);
+        const resumedExtreme = turn === 'high'
+          ? Math.max(...resumedValues.map((row) => row.value))
+          : Math.min(...resumedValues.map((row) => row.value));
+        const dominant = resumptionDominates({
+          excursionDays: daysBetween(raw[index].time, raw[adverseIndex].time),
+          resumptionDays: daysBetween(raw[adverseIndex].time, raw.at(-1).time),
+          excursionMove: retracement,
+          resumptionMove: Math.abs(resumedExtreme - raw[adverseIndex].value),
+          madeNewExtreme: turn === 'high'
+            ? resumedExtreme > raw[index].value + threshold
+            : resumedExtreme < raw[index].value - threshold,
+          longTermDirection: pathDirection(raw, adverseIndex, raw.length - 1, threshold) === (turn === 'high' ? 'rising' : 'falling'),
+        });
+        if (!structuralDamage || dominant) {
+          continue;
+        }
+      }
+
+      const previousRegime = turn === 'high' ? 'rising' : 'falling';
+      const nextRegime = turn === 'high' ? 'falling' : 'rising';
+
+      pivots.push(Object.freeze({
+        ...pivotFields(raw, index, to, previousRegime, nextRegime),
+        previousRegime,
+        nextRegime,
+        pivotType: 'extreme',
+        requiredMinimumDays: minimumRegimeDays,
+        confirmed: true,
+        durationBefore: daysBetween(raw[from].time, raw[index].time),
+        durationAfter: daysBetween(raw[index].time, raw[to].time),
+        validationSource: 'retrospective_full_path',
+      }));
+    }
+
     return Object.freeze(pivots);
   }
 
-  function retrospectiveTrendPath(rows,{frequency='M',minimumRegimeDays=31}={}){
-    const raw=validRows(rows),data=smoothRows(raw,frequency);if(data.length<2)return Object.freeze({regimes:Object.freeze([]),pivots:Object.freeze([]),technicalCandidates:Object.freeze([]),pending:null,activeTrend:null,invalidations:Object.freeze([]),threshold:0});
-    const threshold=scaleThreshold(data),regimes=[],pivots=[],technicalCandidates=[],technicalCandidateKeys=new Set(),invalidations=[];
-    const firstEligibleIndex=data.findIndex((row,index)=>index>0&&daysBetween(data[0].time,row.time)>=minimumRegimeDays),initialConfirmationIndex=firstEligibleIndex>=0?firstEligibleIndex:data.length-1;
-    const initialMove=rawPointValue(initialConfirmationIndex)-rawPointValue(0),initialTrendFloor=threshold/ANALYSIS_POLICY.scale.noiseMultiplier*.8;
-    const initialType=initialMove>=initialTrendFloor?'rising':initialMove<=-initialTrendFloor?'falling':'sideways';
-    const initialValues=data.slice(0,initialConfirmationIndex+1).map(row=>row.smoothedValue);
-    let active={type:initialType,startIndex:0,confirmationIndex:initialConfirmationIndex,extremeIndex:initialType==='rising'?initialValues.indexOf(Math.max(...initialValues)):initialType==='falling'?initialValues.indexOf(Math.min(...initialValues)):initialConfirmationIndex,bandLow:Math.min(...initialValues),bandHigh:Math.max(...initialValues)},pending=null;
-    function rawPointValue(index){return (raw[index]||data[index]).value;}
-    const value=index=>data[index].smoothedValue,rawPoint=index=>raw[index]||data[index],rawExtreme=(from,to,type)=>rawExtremeIndex(raw,from,to,type),pivotType=previous=>previous==='sideways'?'departure':'extreme';
-    function trailingStructure(endIndex){let startIndex=endIndex;while(startIndex>active.startIndex&&daysBetween(data[startIndex].time,data[endIndex].time)<minimumRegimeDays)startIndex--;if(startIndex===endIndex||daysBetween(data[startIndex].time,data[endIndex].time)<minimumRegimeDays)return null;const values=data.slice(startIndex,endIndex+1).map(row=>row.smoothedValue),travel=values.slice(1).reduce((sum,item,index)=>sum+Math.abs(item-values[index]),0),efficiency=travel?Math.abs(values.at(-1)-values[0])/travel:0;return{startIndex,sideways:efficiency<=ANALYSIS_POLICY.scale.sidewaysEfficiency};}
-    function appendRegime(type,startIndex,confirmationIndex){const previous=regimes.at(-1);if(previous&&previous.type===type)return;if(previous)previous.endIndex=startIndex;regimes.push({type,startIndex,endIndex:data.length-1,confirmationIndex,requiredMinimumDays:minimumRegimeDays});}
-    function confirm(nextType,boundaryIndex,confirmationIndex,breakoutIndex=null){if(!regimes.length)appendRegime(active.type,active.startIndex,active.confirmationIndex);const previous=regimes.at(-1),kind=pivotType(previous.type),pivotIndex=previous.type==='sideways'?boundaryIndex:rawExtreme(active.startIndex,confirmationIndex,previous.type);previous.endIndex=pivotIndex;appendRegime(nextType,pivotIndex,confirmationIndex);pivots.push({...pivotFields(raw,pivotIndex,confirmationIndex,previous.type,nextType,breakoutIndex),previousRegime:previous.type,nextRegime:nextType,pivotType:kind,requiredMinimumDays:minimumRegimeDays,confirmed:true});const rangeValues=nextType==='sideways'?data.slice(pivotIndex,confirmationIndex+1).map(row=>row.smoothedValue):[value(pivotIndex)];active={type:nextType,startIndex:pivotIndex,confirmationIndex,extremeIndex:pivotIndex,bandLow:Math.min(...rangeValues),bandHigh:Math.max(...rangeValues)};pending=null;}
-    appendRegime(initialType,0,initialConfirmationIndex);
-    for(let index=initialConfirmationIndex+1;index<data.length;index++){
-      const current=value(index),date=data[index].time;
-      const trailing=!pending&&active.type!=='sideways'?trailingStructure(index):null;if(trailing?.sideways)pending={nextType:'sideways',boundaryIndex:trailing.startIndex,startedIndex:index,extremeIndex:index};
-      if(active.type==='rising'){
-        if(pending&&current>value(active.extremeIndex)+threshold){invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'higher_high',replacedBy:date});active.extremeIndex=index;pending=null;continue;}if(!pending&&current>value(active.extremeIndex)){active.extremeIndex=index;continue;}
-        const stalled=daysBetween(data[active.extremeIndex].time,date)>=minimumRegimeDays,decline=value(active.extremeIndex)-current;if(!pending&&(decline>0||stalled))pending={nextType:decline>=threshold?'falling':'sideways',boundaryIndex:active.extremeIndex,startedIndex:index,extremeIndex:index};
-      }else if(active.type==='falling'){
-        if(pending&&current<value(active.extremeIndex)-threshold){invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'lower_low',replacedBy:date});active.extremeIndex=index;pending=null;continue;}if(!pending&&current<value(active.extremeIndex)){active.extremeIndex=index;continue;}
-        const stalled=daysBetween(data[active.extremeIndex].time,date)>=minimumRegimeDays,rally=current-value(active.extremeIndex);if(!pending&&(rally>0||stalled))pending={nextType:rally>=threshold?'rising':'sideways',boundaryIndex:active.extremeIndex,startedIndex:index,extremeIndex:index};
-      }else if(!pending){
-        if(current>active.bandHigh)pending={nextType:'rising',boundaryIndex:index,startedIndex:index,extremeIndex:index};else if(current<active.bandLow)pending={nextType:'falling',boundaryIndex:index,startedIndex:index,extremeIndex:index};else active.extremeIndex=index;
-      }else{const returned=pending.nextType==='rising'?current<=active.bandHigh:current>=active.bandLow;if(returned){invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'range_return',replacedBy:null});pending=null;}}
-      if(!pending)continue;if(active.type==='rising'&&value(active.extremeIndex)-current>=threshold)pending.nextType='falling';if(active.type==='falling'&&current-value(active.extremeIndex)>=threshold)pending.nextType='rising';if(pending.nextType==='falling'&&current<value(pending.extremeIndex))pending.extremeIndex=index;if(pending.nextType==='rising'&&current>value(pending.extremeIndex))pending.extremeIndex=index;
-      const structuralMove=pending.nextType==='rising'?value(pending.extremeIndex)-active.bandHigh:pending.nextType==='falling'?active.bandLow-value(pending.extremeIndex):threshold,magnitudeConfirmed=active.type!=='sideways'||structuralMove>=threshold,structuralBoundary=active.type==='sideways';if(structuralBoundary&&magnitudeConfirmed&&!pending.structuralBoundaryLocked){const target=threshold,from=pending.startedIndex,breakoutIndex=data.findIndex((row,candidateIndex)=>candidateIndex>=from&&candidateIndex<=index&&(pending.nextType==='rising'?row.smoothedValue-active.bandHigh:active.bandLow-row.smoothedValue)>=target);if(breakoutIndex>=from)pending={...pending,boundaryIndex:departurePivotIndex(raw,data,active.startIndex,breakoutIndex,pending.nextType),breakoutIndex,structuralBoundaryLocked:true};}const boundaryConfirmed=!structuralBoundary||pending.structuralBoundaryLocked,monitoringDays=daysBetween(data[pending.boundaryIndex].time,date);pending={...pending,monitoringDays,status:monitoringDays>=minimumRegimeDays&&magnitudeConfirmed&&boundaryConfirmed?'candidate':'watch',currentExtremeDate:rawPoint(pending.extremeIndex).time,currentExtremeValue:rawPoint(pending.extremeIndex).value};const candidateIndex=active.type==='sideways'?pending.boundaryIndex:rawExtreme(active.startIndex,index,active.type),candidatePoint=rawPoint(candidateIndex),candidateKey=`${candidatePoint.time}:${active.type}:${pending.nextType}`;if(!technicalCandidateKeys.has(candidateKey)){technicalCandidateKeys.add(candidateKey);technicalCandidates.push({...pivotFields(raw,candidateIndex,index,active.type,pending.nextType,pending.breakoutIndex??null),previousRegime:active.type,nextRegime:pending.nextType,pivotType:pivotType(active.type),pivotRole:'technical-candidate'});}if(monitoringDays>=minimumRegimeDays&&magnitudeConfirmed&&boundaryConfirmed)confirm(pending.nextType,pending.boundaryIndex,index,pending.breakoutIndex??null);
+  function retrospectiveTrendPath(rows, { frequency = 'M', minimumRegimeDays = 31 } = {}) {
+    const raw = validRows(rows);
+    const data = smoothRows(raw, frequency);
+    if (data.length < 2) {
+      return Object.freeze({
+        regimes: Object.freeze([]),
+        pivots: Object.freeze([]),
+        technicalCandidates: Object.freeze([]),
+        pending: null,
+        activeTrend: null,
+        invalidations: Object.freeze([]),
+        threshold: 0,
+      });
     }
-    if(!regimes.length)appendRegime(active.type,active.startIndex,active.confirmationIndex);
-    for(const regime of regimes){const start=rawPoint(regime.startIndex),end=rawPoint(regime.endIndex),confirmation=rawPoint(regime.confirmationIndex);regime.startDate=start.time;regime.endDate=end.time;regime.confirmationDate=confirmation.time;regime.durationDays=Math.max(0,daysBetween(start.time,end.time));delete regime.startIndex;delete regime.endIndex;delete regime.confirmationIndex;}
-    for(let index=0;index<pivots.length;index++){const pivot=pivots[index],next=pivots[index+1];pivot.durationBefore=regimes[index]?.durationDays||0;pivot.durationAfter=next?daysBetween(pivot.pivotDate,next.pivotDate):daysBetween(pivot.pivotDate,raw.at(-1).time);Object.freeze(pivot);}
-    const pendingResult=pending?Object.freeze({...pending,candidateDate:rawPoint(pending.boundaryIndex).time,previousRegime:active.type,invalidationCondition:active.type==='rising'?'전고점 갱신':active.type==='falling'?'전저점 갱신':'기존 범위 복귀'}):null,activeTrend=Object.freeze({type:active.type,currentExtremeDate:rawPoint(active.extremeIndex).time,currentExtremeValue:rawPoint(active.extremeIndex).value});
-    return Object.freeze({regimes:Object.freeze(regimes.map(Object.freeze)),pivots:Object.freeze(pivots),technicalCandidates:Object.freeze(technicalCandidates.map(Object.freeze)),pending:pendingResult,activeTrend,invalidations:Object.freeze(invalidations.map(Object.freeze)),threshold,online:false});
+
+    const threshold = scaleThreshold(data);
+    const regimes = [];
+    const pivots = [];
+    const technicalCandidates = [];
+    const technicalCandidateKeys = new Set();
+    const invalidations = [];
+
+    const firstEligibleIndex = data.findIndex((row, index) => index > 0 && daysBetween(data[0].time, row.time) >= minimumRegimeDays);
+    const initialConfirmationIndex = firstEligibleIndex >= 0 ? firstEligibleIndex : data.length - 1;
+    const initialMove = rawPointValue(initialConfirmationIndex) - rawPointValue(0);
+    const initialTrendFloor = (threshold / ANALYSIS_POLICY.scale.noiseMultiplier) * 0.8;
+    const initialType = initialMove >= initialTrendFloor
+      ? 'rising'
+      : initialMove <= -initialTrendFloor
+        ? 'falling'
+        : 'sideways';
+    const initialValues = data.slice(0, initialConfirmationIndex + 1).map((row) => row.smoothedValue);
+
+    let active = {
+      type: initialType,
+      startIndex: 0,
+      confirmationIndex: initialConfirmationIndex,
+      extremeIndex: initialType === 'rising'
+        ? initialValues.indexOf(Math.max(...initialValues))
+        : initialType === 'falling'
+          ? initialValues.indexOf(Math.min(...initialValues))
+          : initialConfirmationIndex,
+      bandLow: Math.min(...initialValues),
+      bandHigh: Math.max(...initialValues),
+    };
+    let pending = null;
+
+    function rawPointValue(index) {
+      return (raw[index] || data[index]).value;
+    }
+
+    const value = (index) => data[index].smoothedValue;
+    const rawPoint = (index) => raw[index] || data[index];
+    const rawExtreme = (from, to, type) => rawExtremeIndex(raw, from, to, type);
+    const pivotType = (previous) => previous === 'sideways' ? 'departure' : 'extreme';
+
+    function trailingStructure(endIndex) {
+      let startIndex = endIndex;
+      while (startIndex > active.startIndex && daysBetween(data[startIndex].time, data[endIndex].time) < minimumRegimeDays) {
+        startIndex--;
+      }
+      if (startIndex === endIndex || daysBetween(data[startIndex].time, data[endIndex].time) < minimumRegimeDays) {
+        return null;
+      }
+      const values = data.slice(startIndex, endIndex + 1).map((row) => row.smoothedValue);
+      const travel = values.slice(1).reduce((sum, item, index) => sum + Math.abs(item - values[index]), 0);
+      const efficiency = travel ? Math.abs(values.at(-1) - values[0]) / travel : 0;
+      return { startIndex, sideways: efficiency <= ANALYSIS_POLICY.scale.sidewaysEfficiency };
+    }
+
+    function appendRegime(type, startIndex, confirmationIndex) {
+      const previous = regimes.at(-1);
+      if (previous && previous.type === type) {
+        return;
+      }
+      if (previous) {
+        previous.endIndex = startIndex;
+      }
+      regimes.push({
+        type,
+        startIndex,
+        endIndex: data.length - 1,
+        confirmationIndex,
+        requiredMinimumDays: minimumRegimeDays,
+      });
+    }
+
+    function confirm(nextType, boundaryIndex, confirmationIndex, breakoutIndex = null) {
+      if (!regimes.length) {
+        appendRegime(active.type, active.startIndex, active.confirmationIndex);
+      }
+      const previous = regimes.at(-1);
+      const kind = pivotType(previous.type);
+      const pivotIndex = previous.type === 'sideways'
+        ? boundaryIndex
+        : rawExtreme(active.startIndex, confirmationIndex, previous.type);
+
+      previous.endIndex = pivotIndex;
+      appendRegime(nextType, pivotIndex, confirmationIndex);
+      pivots.push({
+        ...pivotFields(raw, pivotIndex, confirmationIndex, previous.type, nextType, breakoutIndex),
+        previousRegime: previous.type,
+        nextRegime: nextType,
+        pivotType: kind,
+        requiredMinimumDays: minimumRegimeDays,
+        confirmed: true,
+      });
+
+      const rangeValues = nextType === 'sideways'
+        ? data.slice(pivotIndex, confirmationIndex + 1).map((row) => row.smoothedValue)
+        : [value(pivotIndex)];
+
+      active = {
+        type: nextType,
+        startIndex: pivotIndex,
+        confirmationIndex,
+        extremeIndex: pivotIndex,
+        bandLow: Math.min(...rangeValues),
+        bandHigh: Math.max(...rangeValues),
+      };
+      pending = null;
+    }
+
+    appendRegime(initialType, 0, initialConfirmationIndex);
+
+    for (let index = initialConfirmationIndex + 1; index < data.length; index++) {
+      const current = value(index);
+      const date = data[index].time;
+      const trailing = !pending && active.type !== 'sideways' ? trailingStructure(index) : null;
+      if (trailing?.sideways) {
+        pending = {
+          nextType: 'sideways',
+          boundaryIndex: trailing.startIndex,
+          startedIndex: index,
+          extremeIndex: index,
+        };
+      }
+
+      if (active.type === 'rising') {
+        if (pending && current > value(active.extremeIndex) + threshold) {
+          invalidations.push({
+            candidateDate: rawPoint(pending.boundaryIndex).time,
+            invalidationDate: date,
+            reason: 'higher_high',
+            replacedBy: date,
+          });
+          active.extremeIndex = index;
+          pending = null;
+          continue;
+        }
+        if (!pending && current > value(active.extremeIndex)) {
+          active.extremeIndex = index;
+          continue;
+        }
+        const stalled = daysBetween(data[active.extremeIndex].time, date) >= minimumRegimeDays;
+        const decline = value(active.extremeIndex) - current;
+        if (!pending && (decline > 0 || stalled)) {
+          pending = {
+            nextType: decline >= threshold ? 'falling' : 'sideways',
+            boundaryIndex: active.extremeIndex,
+            startedIndex: index,
+            extremeIndex: index,
+          };
+        }
+      } else if (active.type === 'falling') {
+        if (pending && current < value(active.extremeIndex) - threshold) {
+          invalidations.push({
+            candidateDate: rawPoint(pending.boundaryIndex).time,
+            invalidationDate: date,
+            reason: 'lower_low',
+            replacedBy: date,
+          });
+          active.extremeIndex = index;
+          pending = null;
+          continue;
+        }
+        if (!pending && current < value(active.extremeIndex)) {
+          active.extremeIndex = index;
+          continue;
+        }
+        const stalled = daysBetween(data[active.extremeIndex].time, date) >= minimumRegimeDays;
+        const rally = current - value(active.extremeIndex);
+        if (!pending && (rally > 0 || stalled)) {
+          pending = {
+            nextType: rally >= threshold ? 'rising' : 'sideways',
+            boundaryIndex: active.extremeIndex,
+            startedIndex: index,
+            extremeIndex: index,
+          };
+        }
+      } else if (!pending) {
+        if (current > active.bandHigh) {
+          pending = { nextType: 'rising', boundaryIndex: index, startedIndex: index, extremeIndex: index };
+        } else if (current < active.bandLow) {
+          pending = { nextType: 'falling', boundaryIndex: index, startedIndex: index, extremeIndex: index };
+        } else {
+          active.extremeIndex = index;
+        }
+      } else {
+        const returned = pending.nextType === 'rising'
+          ? current <= active.bandHigh
+          : current >= active.bandLow;
+        if (returned) {
+          invalidations.push({
+            candidateDate: rawPoint(pending.boundaryIndex).time,
+            invalidationDate: date,
+            reason: 'range_return',
+            replacedBy: null,
+          });
+          pending = null;
+        }
+      }
+
+      if (!pending) {
+        continue;
+      }
+
+      if (active.type === 'rising' && value(active.extremeIndex) - current >= threshold) {
+        pending.nextType = 'falling';
+      }
+      if (active.type === 'falling' && current - value(active.extremeIndex) >= threshold) {
+        pending.nextType = 'rising';
+      }
+      if (pending.nextType === 'falling' && current < value(pending.extremeIndex)) {
+        pending.extremeIndex = index;
+      }
+      if (pending.nextType === 'rising' && current > value(pending.extremeIndex)) {
+        pending.extremeIndex = index;
+      }
+
+      const structuralMove = pending.nextType === 'rising'
+        ? value(pending.extremeIndex) - active.bandHigh
+        : pending.nextType === 'falling'
+          ? active.bandLow - value(pending.extremeIndex)
+          : threshold;
+      const magnitudeConfirmed = active.type !== 'sideways' || structuralMove >= threshold;
+      const structuralBoundary = active.type === 'sideways';
+
+      if (structuralBoundary && magnitudeConfirmed && !pending.structuralBoundaryLocked) {
+        const target = threshold;
+        const from = pending.startedIndex;
+        const breakoutIndex = data.findIndex((row, candidateIndex) => {
+          return candidateIndex >= from && candidateIndex <= index && (pending.nextType === 'rising'
+            ? row.smoothedValue - active.bandHigh >= target
+            : active.bandLow - row.smoothedValue >= target);
+        });
+        if (breakoutIndex >= from) {
+          pending = {
+            ...pending,
+            boundaryIndex: departurePivotIndex(raw, data, active.startIndex, breakoutIndex, pending.nextType),
+            breakoutIndex,
+            structuralBoundaryLocked: true,
+          };
+        }
+      }
+
+      const boundaryConfirmed = !structuralBoundary || pending.structuralBoundaryLocked;
+      const monitoringDays = daysBetween(data[pending.boundaryIndex].time, date);
+
+      pending = {
+        ...pending,
+        monitoringDays,
+        status: monitoringDays >= minimumRegimeDays && magnitudeConfirmed && boundaryConfirmed ? 'candidate' : 'watch',
+        currentExtremeDate: rawPoint(pending.extremeIndex).time,
+        currentExtremeValue: rawPoint(pending.extremeIndex).value,
+      };
+
+      const candidateIndex = active.type === 'sideways'
+        ? pending.boundaryIndex
+        : rawExtreme(active.startIndex, index, active.type);
+      const candidatePoint = rawPoint(candidateIndex);
+      const candidateKey = `${candidatePoint.time}:${active.type}:${pending.nextType}`;
+
+      if (!technicalCandidateKeys.has(candidateKey)) {
+        technicalCandidateKeys.add(candidateKey);
+        technicalCandidates.push({
+          ...pivotFields(raw, candidateIndex, index, active.type, pending.nextType, pending.breakoutIndex ?? null),
+          previousRegime: active.type,
+          nextRegime: pending.nextType,
+          pivotType: pivotType(active.type),
+          pivotRole: 'technical-candidate',
+        });
+      }
+
+      if (monitoringDays >= minimumRegimeDays && magnitudeConfirmed && boundaryConfirmed) {
+        confirm(pending.nextType, pending.boundaryIndex, index, pending.breakoutIndex ?? null);
+      }
+    }
+
+    if (!regimes.length) {
+      appendRegime(active.type, active.startIndex, active.confirmationIndex);
+    }
+
+    for (const regime of regimes) {
+      const start = rawPoint(regime.startIndex);
+      const end = rawPoint(regime.endIndex);
+      const confirmation = rawPoint(regime.confirmationIndex);
+      regime.startDate = start.time;
+      regime.endDate = end.time;
+      regime.confirmationDate = confirmation.time;
+      regime.durationDays = Math.max(0, daysBetween(start.time, end.time));
+      delete regime.startIndex;
+      delete regime.endIndex;
+      delete regime.confirmationIndex;
+    }
+
+    for (let index = 0; index < pivots.length; index++) {
+      const pivot = pivots[index];
+      const next = pivots[index + 1];
+      pivot.durationBefore = regimes[index]?.durationDays || 0;
+      pivot.durationAfter = next
+        ? daysBetween(pivot.pivotDate, next.pivotDate)
+        : daysBetween(pivot.pivotDate, raw.at(-1).time);
+      Object.freeze(pivot);
+    }
+
+    const pendingResult = pending ? Object.freeze({
+      ...pending,
+      candidateDate: rawPoint(pending.boundaryIndex).time,
+      previousRegime: active.type,
+      invalidationCondition: active.type === 'rising' ? '전고점 갱신' : active.type === 'falling' ? '전저점 갱신' : '기존 범위 복귀',
+    }) : null;
+
+    const activeTrend = Object.freeze({
+      type: active.type,
+      currentExtremeDate: rawPoint(active.extremeIndex).time,
+      currentExtremeValue: rawPoint(active.extremeIndex).value,
+    });
+
+    return Object.freeze({
+      regimes: Object.freeze(regimes.map(Object.freeze)),
+      pivots: Object.freeze(pivots),
+      technicalCandidates: Object.freeze(technicalCandidates.map(Object.freeze)),
+      pending: pendingResult,
+      activeTrend,
+      invalidations: Object.freeze(invalidations.map(Object.freeze)),
+      threshold,
+      online: false,
+    });
   }
-  function onlineTrendPath(rows,{frequency='M',minimumRegimeDays=92}={}){
-    const raw=validRows(rows),data=smoothRows(raw,frequency),empty=Object.freeze([]);if(data.length<2)return Object.freeze({regimes:empty,pivots:empty,technicalCandidates:empty,pending:null,activeTrend:null,invalidations:empty,threshold:0,online:true});
-    const threshold=scaleThreshold(data),travel=[0],pivots=[],invalidations=[],regimes=[];for(let index=1;index<data.length;index++)travel[index]=travel[index-1]+Math.abs(data[index].smoothedValue-data[index-1].smoothedValue);
-    const value=index=>data[index].smoothedValue,rawPoint=index=>raw[index],rawExtreme=(from,to,type)=>rawExtremeIndex(raw,from,to,type);
-    const initialEvidenceDays=structuralEvidenceDays(frequency),firstEligibleIndex=data.findIndex((row,index)=>index>0&&daysBetween(data[0].time,row.time)>=initialEvidenceDays);let confirmationIndex=firstEligibleIndex>=0?firstEligibleIndex:data.length-1;const initialMove=raw[confirmationIndex].value-raw[0].value,initialTrendFloor=threshold/ANALYSIS_POLICY.scale.noiseMultiplier*.8,initialType=initialMove>=initialTrendFloor?'rising':initialMove<=-initialTrendFloor?'falling':'sideways',initialValues=data.slice(0,confirmationIndex+1).map(row=>row.smoothedValue);
-    let active={type:initialType,startIndex:0,confirmationIndex,extremeIndex:initialType==='rising'?rawExtreme(0,confirmationIndex,'rising'):initialType==='falling'?rawExtreme(0,confirmationIndex,'falling'):confirmationIndex,structureExtremeValue:initialType==='rising'?Math.max(...initialValues):initialType==='falling'?Math.min(...initialValues):value(confirmationIndex),bandLow:Math.min(...initialValues),bandHigh:Math.max(...initialValues)},pending=null;
-    const appendRegime=(type,startIndex,confirmedAt)=>{const previous=regimes.at(-1);if(previous&&previous.type===type)return;if(previous)previous.endIndex=startIndex;regimes.push({type,startIndex,endIndex:data.length-1,confirmationIndex:confirmedAt,requiredMinimumDays:minimumRegimeDays});};appendRegime(active.type,0,confirmationIndex);
-    function confirm(nextType,boundaryIndex,confirmedAt,breakoutIndex=null){const previous=regimes.at(-1),directional=previous.type!=='sideways',pivotIndex=directional?active.extremeIndex:boundaryIndex,quality=pending?.structuralQuality??100,persistenceScore=pending?.persistenceScore??100;previous.endIndex=pivotIndex;appendRegime(nextType,pivotIndex,confirmedAt);pivots.push({...pivotFields(raw,pivotIndex,confirmedAt,previous.type,nextType,breakoutIndex),previousRegime:previous.type,nextRegime:nextType,pivotType:directional?'extreme':'departure',requiredMinimumDays:minimumRegimeDays,confirmed:true,structuralStatus:'structural_confirmed',structuralQuality:quality,persistenceScore});const range=data.slice(pivotIndex,confirmedAt+1).map(row=>row.smoothedValue);active={type:nextType,startIndex:pivotIndex,confirmationIndex:confirmedAt,extremeIndex:nextType==='rising'?rawExtreme(pivotIndex,confirmedAt,'rising'):nextType==='falling'?rawExtreme(pivotIndex,confirmedAt,'falling'):confirmedAt,structureExtremeValue:nextType==='rising'?Math.max(...range):nextType==='falling'?Math.min(...range):value(confirmedAt),bandLow:Math.min(...range),bandHigh:Math.max(...range)};pending=null;}
-    for(let index=confirmationIndex+1;index<data.length;index++){
-      const current=value(index),date=data[index].time;
-      if(active.type==='rising'){
-        if(raw[index].value>raw[active.extremeIndex].value){if(pending)invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'replaced_by_new_extreme',replacedBy:date});active.extremeIndex=index;active.structureExtremeValue=Math.max(active.structureExtremeValue,current);pending=null;continue;}
-        if(!pending&&current>active.structureExtremeValue){active.structureExtremeValue=current;continue;}if(!pending&&active.structureExtremeValue-current>0)pending={nextType:'sideways',boundaryIndex:active.extremeIndex,startedIndex:index,extremeIndex:index,extremeValue:current};
-      }else if(active.type==='falling'){
-        if(raw[index].value<raw[active.extremeIndex].value){if(pending)invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'replaced_by_new_extreme',replacedBy:date});active.extremeIndex=index;active.structureExtremeValue=Math.min(active.structureExtremeValue,current);pending=null;continue;}
-        if(!pending&&current<active.structureExtremeValue){active.structureExtremeValue=current;continue;}if(!pending&&current-active.structureExtremeValue>0)pending={nextType:'sideways',boundaryIndex:active.extremeIndex,startedIndex:index,extremeIndex:index,extremeValue:current};
-      }else if(!pending){
-        if(current>active.bandHigh+threshold){const boundaryIndex=departurePivotIndex(raw,data,active.startIndex,index,'rising');pending={nextType:'rising',boundaryIndex,breakoutIndex:index,startedIndex:index,extremeIndex:index,extremeValue:current,structuralBoundaryLocked:true};}else if(current<active.bandLow-threshold){const boundaryIndex=departurePivotIndex(raw,data,active.startIndex,index,'falling');pending={nextType:'falling',boundaryIndex,breakoutIndex:index,startedIndex:index,extremeIndex:index,extremeValue:current,structuralBoundaryLocked:true};}
-      }else{const returned=pending.nextType==='rising'?current<=active.bandHigh:current>=active.bandLow;if(returned){invalidations.push({candidateDate:rawPoint(pending.boundaryIndex).time,invalidationDate:date,reason:'range_return',replacedBy:null});pending=null;}}
-      if(!pending)continue;if(active.type==='rising'){if(raw[index].value<raw[pending.extremeIndex].value)pending.extremeIndex=index;pending.extremeValue=Math.min(pending.extremeValue,current);}if(active.type==='falling'){if(raw[index].value>raw[pending.extremeIndex].value)pending.extremeIndex=index;pending.extremeValue=Math.max(pending.extremeValue,current);}if(active.type==='sideways'&&pending.nextType==='rising'&&current>pending.extremeValue){pending.extremeIndex=index;pending.extremeValue=current;}if(active.type==='sideways'&&pending.nextType==='falling'&&current<pending.extremeValue){pending.extremeIndex=index;pending.extremeValue=current;}
-      const adverse=active.type==='rising'?active.structureExtremeValue-pending.extremeValue:active.type==='falling'?pending.extremeValue-active.structureExtremeValue:pending.nextType==='rising'?pending.extremeValue-active.bandHigh:active.bandLow-pending.extremeValue,advance=active.type==='rising'?active.structureExtremeValue-value(active.startIndex):active.type==='falling'?value(active.startIndex)-active.structureExtremeValue:Math.max(active.bandHigh-active.bandLow,threshold),pathTravel=travel[index]-travel[pending.boundaryIndex],efficiency=pathTravel?Math.abs(value(index)-value(pending.boundaryIndex))/pathTravel:0,deepDamage=adverse>=Math.max(Math.max(0,advance)*ANALYSIS_POLICY.correction.maximumRetracementFraction,threshold*ANALYSIS_POLICY.correction.maximumVolatilityUnits);
-      if(active.type==='rising')pending.nextType=deepDamage&&efficiency>ANALYSIS_POLICY.scale.sidewaysEfficiency?'falling':'sideways';else if(active.type==='falling')pending.nextType=deepDamage&&efficiency>ANALYSIS_POLICY.scale.sidewaysEfficiency?'rising':'sideways';const structural=active.type==='sideways'?adverse>=threshold:pending.nextType==='sideways'?adverse>=threshold&&efficiency<=ANALYSIS_POLICY.scale.sidewaysEfficiency:deepDamage,monitoringDays=daysBetween(rawPoint(pending.boundaryIndex).time,date),persistent=pending.nextType==='sideways'?efficiency<=ANALYSIS_POLICY.scale.sidewaysEfficiency:efficiency>ANALYSIS_POLICY.scale.sidewaysEfficiency,confirmed=structural&&monitoringDays>=minimumRegimeDays&&persistent;
-      const magnitudeScore=Math.min(100,Math.max(0,adverse/Math.max(threshold,1e-9))*50),persistenceScore=Math.min(100,monitoringDays/Math.max(1,minimumRegimeDays)*100),pathScore=persistent?(pending.nextType==='sideways'?Math.max(0,100-efficiency*100):Math.min(100,50+efficiency*50)):20,structuralQuality=Math.min(100,magnitudeScore*.5+persistenceScore*.3+pathScore*.2);
-      pending={...pending,monitoringDays,status:structural?'candidate':'watch',currentExtremeDate:rawPoint(pending.extremeIndex).time,currentExtremeValue:rawPoint(pending.extremeIndex).value,retracementDepth:advance?adverse/Math.abs(advance):null,structuralStatus:structural?'candidate':'watch',structuralQuality,persistenceScore};if(confirmed)confirm(pending.nextType,pending.boundaryIndex,index,pending.breakoutIndex??null);
+
+  function onlineTrendPath(rows, { frequency = 'M', minimumRegimeDays = 92 } = {}) {
+    const raw = validRows(rows);
+    const data = smoothRows(raw, frequency);
+    const empty = Object.freeze([]);
+    if (data.length < 2) {
+      return Object.freeze({
+        regimes: empty,
+        pivots: empty,
+        technicalCandidates: empty,
+        pending: null,
+        activeTrend: null,
+        invalidations: empty,
+        threshold: 0,
+        online: true,
+      });
     }
-    for(const regime of regimes){const start=rawPoint(regime.startIndex),end=rawPoint(regime.endIndex),confirmed=rawPoint(regime.confirmationIndex);regime.startDate=start.time;regime.endDate=end.time;regime.confirmationDate=confirmed.time;regime.durationDays=Math.max(0,daysBetween(start.time,end.time));delete regime.startIndex;delete regime.endIndex;delete regime.confirmationIndex;Object.freeze(regime);}for(let index=0;index<pivots.length;index++){pivots[index].durationBefore=regimes[index]?.durationDays||0;pivots[index].durationAfter=pivots[index+1]?daysBetween(pivots[index].pivotDate,pivots[index+1].pivotDate):daysBetween(pivots[index].pivotDate,raw.at(-1).time);Object.freeze(pivots[index]);}
-    const pendingResult=pending?Object.freeze({...pending,candidateDate:rawPoint(pending.boundaryIndex).time,regimeBoundaryDate:rawPoint(pending.boundaryIndex).time,breakoutOrBreakdownDate:pending.breakoutIndex==null?null:rawPoint(pending.breakoutIndex).time,confirmationEvidence:pending.breakoutIndex==null?null:Object.freeze({type:pending.nextType==='rising'?'range_breakout':'range_breakdown',eventDate:rawPoint(pending.breakoutIndex).time,confirmedAt:null}),previousRegime:active.type,invalidationCondition:active.type==='rising'?'전고점 갱신':active.type==='falling'?'전저점 갱신':'기존 범위 복귀'}):null,activeTrend=Object.freeze({type:active.type,currentExtremeDate:rawPoint(active.extremeIndex).time,currentExtremeValue:rawPoint(active.extremeIndex).value});return Object.freeze({regimes:Object.freeze(regimes),pivots:Object.freeze(pivots),technicalCandidates:empty,pending:pendingResult,activeTrend,invalidations:Object.freeze(invalidations.map(Object.freeze)),threshold,online:true});
+
+    const threshold = scaleThreshold(data);
+    const travel = [0];
+    const pivots = [];
+    const invalidations = [];
+    const regimes = [];
+
+    for (let index = 1; index < data.length; index++) {
+      travel[index] = travel[index - 1] + Math.abs(data[index].smoothedValue - data[index - 1].smoothedValue);
+    }
+
+    const value = (index) => data[index].smoothedValue;
+    const rawPoint = (index) => raw[index];
+    const rawExtreme = (from, to, type) => rawExtremeIndex(raw, from, to, type);
+
+    const initialEvidenceDays = structuralEvidenceDays(frequency);
+    const firstEligibleIndex = data.findIndex((row, index) => index > 0 && daysBetween(data[0].time, row.time) >= initialEvidenceDays);
+    let confirmationIndex = firstEligibleIndex >= 0 ? firstEligibleIndex : data.length - 1;
+    const initialMove = raw[confirmationIndex].value - raw[0].value;
+    const initialTrendFloor = (threshold / ANALYSIS_POLICY.scale.noiseMultiplier) * 0.8;
+    const initialType = initialMove >= initialTrendFloor
+      ? 'rising'
+      : initialMove <= -initialTrendFloor
+        ? 'falling'
+        : 'sideways';
+    const initialValues = data.slice(0, confirmationIndex + 1).map((row) => row.smoothedValue);
+
+    let active = {
+      type: initialType,
+      startIndex: 0,
+      confirmationIndex,
+      extremeIndex: initialType === 'rising'
+        ? rawExtreme(0, confirmationIndex, 'rising')
+        : initialType === 'falling'
+          ? rawExtreme(0, confirmationIndex, 'falling')
+          : confirmationIndex,
+      structureExtremeValue: initialType === 'rising'
+        ? Math.max(...initialValues)
+        : initialType === 'falling'
+          ? Math.min(...initialValues)
+          : value(confirmationIndex),
+      bandLow: Math.min(...initialValues),
+      bandHigh: Math.max(...initialValues),
+    };
+    let pending = null;
+
+    const appendRegime = (type, startIndex, confirmedAt) => {
+      const previous = regimes.at(-1);
+      if (previous && previous.type === type) {
+        return;
+      }
+      if (previous) {
+        previous.endIndex = startIndex;
+      }
+      regimes.push({
+        type,
+        startIndex,
+        endIndex: data.length - 1,
+        confirmationIndex: confirmedAt,
+        requiredMinimumDays: minimumRegimeDays,
+      });
+    };
+
+    appendRegime(active.type, 0, confirmationIndex);
+
+    function confirm(nextType, boundaryIndex, confirmedAt, breakoutIndex = null) {
+      const previous = regimes.at(-1);
+      const directional = previous.type !== 'sideways';
+      const pivotIndex = directional ? active.extremeIndex : boundaryIndex;
+      const quality = pending?.structuralQuality ?? 100;
+      const persistenceScore = pending?.persistenceScore ?? 100;
+
+      previous.endIndex = pivotIndex;
+      appendRegime(nextType, pivotIndex, confirmedAt);
+      pivots.push({
+        ...pivotFields(raw, pivotIndex, confirmedAt, previous.type, nextType, breakoutIndex),
+        previousRegime: previous.type,
+        nextRegime: nextType,
+        pivotType: directional ? 'extreme' : 'departure',
+        requiredMinimumDays: minimumRegimeDays,
+        confirmed: true,
+        structuralStatus: 'structural_confirmed',
+        structuralQuality: quality,
+        persistenceScore,
+      });
+
+      const range = data.slice(pivotIndex, confirmedAt + 1).map((row) => row.smoothedValue);
+      active = {
+        type: nextType,
+        startIndex: pivotIndex,
+        confirmationIndex: confirmedAt,
+        extremeIndex: nextType === 'rising'
+          ? rawExtreme(pivotIndex, confirmedAt, 'rising')
+          : nextType === 'falling'
+            ? rawExtreme(pivotIndex, confirmedAt, 'falling')
+            : confirmedAt,
+        structureExtremeValue: nextType === 'rising'
+          ? Math.max(...range)
+          : nextType === 'falling'
+            ? Math.min(...range)
+            : value(confirmedAt),
+        bandLow: Math.min(...range),
+        bandHigh: Math.max(...range),
+      };
+      pending = null;
+    }
+
+    for (let index = confirmationIndex + 1; index < data.length; index++) {
+      const current = value(index);
+      const date = data[index].time;
+
+      if (active.type === 'rising') {
+        if (raw[index].value > raw[active.extremeIndex].value) {
+          if (pending) {
+            invalidations.push({
+              candidateDate: rawPoint(pending.boundaryIndex).time,
+              invalidationDate: date,
+              reason: 'replaced_by_new_extreme',
+              replacedBy: date,
+            });
+          }
+          active.extremeIndex = index;
+          active.structureExtremeValue = Math.max(active.structureExtremeValue, current);
+          pending = null;
+          continue;
+        }
+        if (!pending && current > active.structureExtremeValue) {
+          active.structureExtremeValue = current;
+          continue;
+        }
+        if (!pending && active.structureExtremeValue - current > 0) {
+          pending = {
+            nextType: 'sideways',
+            boundaryIndex: active.extremeIndex,
+            startedIndex: index,
+            extremeIndex: index,
+            extremeValue: current,
+          };
+        }
+      } else if (active.type === 'falling') {
+        if (raw[index].value < raw[active.extremeIndex].value) {
+          if (pending) {
+            invalidations.push({
+              candidateDate: rawPoint(pending.boundaryIndex).time,
+              invalidationDate: date,
+              reason: 'replaced_by_new_extreme',
+              replacedBy: date,
+            });
+          }
+          active.extremeIndex = index;
+          active.structureExtremeValue = Math.min(active.structureExtremeValue, current);
+          pending = null;
+          continue;
+        }
+        if (!pending && current < active.structureExtremeValue) {
+          active.structureExtremeValue = current;
+          continue;
+        }
+        if (!pending && current - active.structureExtremeValue > 0) {
+          pending = {
+            nextType: 'sideways',
+            boundaryIndex: active.extremeIndex,
+            startedIndex: index,
+            extremeIndex: index,
+            extremeValue: current,
+          };
+        }
+      } else if (!pending) {
+        if (current > active.bandHigh + threshold) {
+          const boundaryIndex = departurePivotIndex(raw, data, active.startIndex, index, 'rising');
+          pending = {
+            nextType: 'rising',
+            boundaryIndex,
+            breakoutIndex: index,
+            startedIndex: index,
+            extremeIndex: index,
+            extremeValue: current,
+            structuralBoundaryLocked: true,
+          };
+        } else if (current < active.bandLow - threshold) {
+          const boundaryIndex = departurePivotIndex(raw, data, active.startIndex, index, 'falling');
+          pending = {
+            nextType: 'falling',
+            boundaryIndex,
+            breakoutIndex: index,
+            startedIndex: index,
+            extremeIndex: index,
+            extremeValue: current,
+            structuralBoundaryLocked: true,
+          };
+        }
+      } else {
+        const returned = pending.nextType === 'rising'
+          ? current <= active.bandHigh
+          : current >= active.bandLow;
+        if (returned) {
+          invalidations.push({
+            candidateDate: rawPoint(pending.boundaryIndex).time,
+            invalidationDate: date,
+            reason: 'range_return',
+            replacedBy: null,
+          });
+          pending = null;
+        }
+      }
+
+      if (!pending) {
+        continue;
+      }
+
+      if (active.type === 'rising') {
+        if (raw[index].value < raw[pending.extremeIndex].value) {
+          pending.extremeIndex = index;
+        }
+        pending.extremeValue = Math.min(pending.extremeValue, current);
+      }
+      if (active.type === 'falling') {
+        if (raw[index].value > raw[pending.extremeIndex].value) {
+          pending.extremeIndex = index;
+        }
+        pending.extremeValue = Math.max(pending.extremeValue, current);
+      }
+      if (active.type === 'sideways' && pending.nextType === 'rising' && current > pending.extremeValue) {
+        pending.extremeIndex = index;
+        pending.extremeValue = current;
+      }
+      if (active.type === 'sideways' && pending.nextType === 'falling' && current < pending.extremeValue) {
+        pending.extremeIndex = index;
+        pending.extremeValue = current;
+      }
+
+      const adverse = active.type === 'rising'
+        ? active.structureExtremeValue - pending.extremeValue
+        : active.type === 'falling'
+          ? pending.extremeValue - active.structureExtremeValue
+          : pending.nextType === 'rising'
+            ? pending.extremeValue - active.bandHigh
+            : active.bandLow - pending.extremeValue;
+
+      const advance = active.type === 'rising'
+        ? active.structureExtremeValue - value(active.startIndex)
+        : active.type === 'falling'
+          ? value(active.startIndex) - active.structureExtremeValue
+          : Math.max(active.bandHigh - active.bandLow, threshold);
+
+      const pathTravel = travel[index] - travel[pending.boundaryIndex];
+      const efficiency = pathTravel ? Math.abs(value(index) - value(pending.boundaryIndex)) / pathTravel : 0;
+      const deepDamage = adverse >= Math.max(
+        Math.max(0, advance) * ANALYSIS_POLICY.correction.maximumRetracementFraction,
+        threshold * ANALYSIS_POLICY.correction.maximumVolatilityUnits,
+      );
+
+      if (active.type === 'rising') {
+        pending.nextType = deepDamage && efficiency > ANALYSIS_POLICY.scale.sidewaysEfficiency ? 'falling' : 'sideways';
+      } else if (active.type === 'falling') {
+        pending.nextType = deepDamage && efficiency > ANALYSIS_POLICY.scale.sidewaysEfficiency ? 'rising' : 'sideways';
+      }
+
+      const structural = active.type === 'sideways'
+        ? adverse >= threshold
+        : pending.nextType === 'sideways'
+          ? adverse >= threshold && efficiency <= ANALYSIS_POLICY.scale.sidewaysEfficiency
+          : deepDamage;
+
+      const monitoringDays = daysBetween(rawPoint(pending.boundaryIndex).time, date);
+      const persistent = pending.nextType === 'sideways'
+        ? efficiency <= ANALYSIS_POLICY.scale.sidewaysEfficiency
+        : efficiency > ANALYSIS_POLICY.scale.sidewaysEfficiency;
+      const confirmed = structural && monitoringDays >= minimumRegimeDays && persistent;
+
+      const magnitudeScore = Math.min(100, Math.max(0, adverse / Math.max(threshold, 1e-9)) * 50);
+      const persistenceScore = Math.min(100, (monitoringDays / Math.max(1, minimumRegimeDays)) * 100);
+      const pathScore = persistent
+        ? (pending.nextType === 'sideways' ? Math.max(0, 100 - efficiency * 100) : Math.min(100, 50 + efficiency * 50))
+        : 20;
+      const structuralQuality = Math.min(100, magnitudeScore * 0.5 + persistenceScore * 0.3 + pathScore * 0.2);
+
+      pending = {
+        ...pending,
+        monitoringDays,
+        status: structural ? 'candidate' : 'watch',
+        currentExtremeDate: rawPoint(pending.extremeIndex).time,
+        currentExtremeValue: rawPoint(pending.extremeIndex).value,
+        retracementDepth: advance ? adverse / Math.abs(advance) : null,
+        structuralStatus: structural ? 'candidate' : 'watch',
+        structuralQuality,
+        persistenceScore,
+      };
+
+      if (confirmed) {
+        confirm(pending.nextType, pending.boundaryIndex, index, pending.breakoutIndex ?? null);
+      }
+    }
+
+    for (const regime of regimes) {
+      const start = rawPoint(regime.startIndex);
+      const end = rawPoint(regime.endIndex);
+      const confirmed = rawPoint(regime.confirmationIndex);
+      regime.startDate = start.time;
+      regime.endDate = end.time;
+      regime.confirmationDate = confirmed.time;
+      regime.durationDays = Math.max(0, daysBetween(start.time, end.time));
+      delete regime.startIndex;
+      delete regime.endIndex;
+      delete regime.confirmationIndex;
+      Object.freeze(regime);
+    }
+
+    for (let index = 0; index < pivots.length; index++) {
+      pivots[index].durationBefore = regimes[index]?.durationDays || 0;
+      pivots[index].durationAfter = pivots[index + 1]
+        ? daysBetween(pivots[index].pivotDate, pivots[index + 1].pivotDate)
+        : daysBetween(pivots[index].pivotDate, raw.at(-1).time);
+      Object.freeze(pivots[index]);
+    }
+
+    const pendingResult = pending ? Object.freeze({
+      ...pending,
+      candidateDate: rawPoint(pending.boundaryIndex).time,
+      regimeBoundaryDate: rawPoint(pending.boundaryIndex).time,
+      breakoutOrBreakdownDate: pending.breakoutIndex == null ? null : rawPoint(pending.breakoutIndex).time,
+      confirmationEvidence: pending.breakoutIndex == null ? null : Object.freeze({
+        type: pending.nextType === 'rising' ? 'range_breakout' : 'range_breakdown',
+        eventDate: rawPoint(pending.breakoutIndex).time,
+        confirmedAt: null,
+      }),
+      previousRegime: active.type,
+      invalidationCondition: active.type === 'rising' ? '전고점 갱신' : active.type === 'falling' ? '전저점 갱신' : '기존 범위 복귀',
+    }) : null;
+
+    const activeTrend = Object.freeze({
+      type: active.type,
+      currentExtremeDate: rawPoint(active.extremeIndex).time,
+      currentExtremeValue: rawPoint(active.extremeIndex).value,
+    });
+
+    return Object.freeze({
+      regimes: Object.freeze(regimes),
+      pivots: Object.freeze(pivots),
+      technicalCandidates: empty,
+      pending: pendingResult,
+      activeTrend,
+      invalidations: Object.freeze(invalidations.map(Object.freeze)),
+      threshold,
+      online: true,
+    });
   }
-  function consolidateRetrospectiveCorrections(rows,path){
-    const source=validRows(rows),regimes=path.regimes.map(item=>({...item})),pivots=path.pivots.map(item=>({...item})),invalidations=[...(path.invalidations||[])],valueOn=date=>source.find(row=>row.time>=date)?.value,valuesBetween=(from,to)=>source.filter(row=>row.time>=from&&row.time<=to).map(row=>row.value),indexOn=date=>source.findIndex(row=>row.time>=date),directional=type=>type==='rising'||type==='falling',efficiency=values=>{const travel=values.slice(1).reduce((sum,value,index)=>sum+Math.abs(value-values[index]),0);return travel?Math.abs(values.at(-1)-values[0])/travel:0;};
-    function transientBetween(previous,resumed,left,right){const from=indexOn(previous.startDate),start=indexOn(left.pivotDate),end=indexOn(right.pivotDate),to=indexOn(resumed.confirmationDate||resumed.endDate),minimumRegimeDays=previous.requiredMinimumDays||31;if(from<0||start<0||end<start||to<=end)return false;const high=rawExtremeIndex(source,start,end,'rising'),low=rawExtremeIndex(source,start,end,'falling');return transientExtreme(source,high,from,to,'high',path.threshold,minimumRegimeDays)||transientExtreme(source,low,from,to,'low',path.threshold,minimumRegimeDays);}
-    function absorbInternalSwing(startIndex,resumedIndex,previous,resumed,invalidationDate,reason){
-      const absorbed=pivots.slice(startIndex,resumedIndex);
-      for(const pivot of absorbed)invalidations.push(Object.freeze({candidateDate:pivot.pivotDate,regimeBoundaryDate:pivot.regimeBoundaryDate,invalidationDate,reason,structuralClassification:'internal_swing',replacedBy:resumed.endDate}));
-      const merged={...previous,endDate:resumed.endDate,durationDays:daysBetween(previous.startDate,resumed.endDate)};regimes.splice(startIndex,resumedIndex-startIndex+1,merged);pivots.splice(startIndex,resumedIndex-startIndex);return Math.max(0,startIndex-1);
+
+  function consolidateRetrospectiveCorrections(rows, path) {
+    const source = validRows(rows);
+    const regimes = path.regimes.map((item) => ({ ...item }));
+    const pivots = path.pivots.map((item) => ({ ...item }));
+    const invalidations = [...(path.invalidations || [])];
+
+    const valueOn = (date) => source.find((row) => row.time >= date)?.value;
+    const valuesBetween = (from, to) => source.filter((row) => row.time >= from && row.time <= to).map((row) => row.value);
+    const indexOn = (date) => source.findIndex((row) => row.time >= date);
+    const directional = (type) => type === 'rising' || type === 'falling';
+
+    const efficiency = (values) => {
+      const travel = values.slice(1).reduce((sum, val, index) => sum + Math.abs(val - values[index]), 0);
+      return travel ? Math.abs(values.at(-1) - values[0]) / travel : 0;
+    };
+
+    function transientBetween(previous, resumed, left, right) {
+      const from = indexOn(previous.startDate);
+      const start = indexOn(left.pivotDate);
+      const end = indexOn(right.pivotDate);
+      const to = indexOn(resumed.confirmationDate || resumed.endDate);
+      const minimumRegimeDays = previous.requiredMinimumDays || 31;
+      if (from < 0 || start < 0 || end < start || to <= end) {
+        return false;
+      }
+      const high = rawExtremeIndex(source, start, end, 'rising');
+      const low = rawExtremeIndex(source, start, end, 'falling');
+      return transientExtreme(source, high, from, to, 'high', path.threshold, minimumRegimeDays)
+        || transientExtreme(source, low, from, to, 'low', path.threshold, minimumRegimeDays);
     }
-    let index=0;
-    while(index<regimes.length-2){
-      const previous=regimes[index],middle=regimes[index+1],next=regimes[index+2],left=pivots[index],right=pivots[index+1];
-      if(directional(previous.type)&&middle?.type==='sideways'&&directional(next?.type)&&next.type!==previous.type&&left&&right){
-        const transitionValues=valuesBetween(left.pivotDate,right.pivotDate);
-        const transitionIsBrief=middle.durationDays<middle.requiredMinimumDays,sameExtreme=left.pivotDate===right.pivotDate;
-        if(sameExtreme||transitionIsBrief||(transitionValues.length>1&&efficiency(transitionValues)>ANALYSIS_POLICY.scale.sidewaysEfficiency)){
-          const directPivot={...left,nextRegime:next.type,breakoutOrBreakdownDate:null,confirmationDate:right.confirmationDate,confirmationEvidence:Object.freeze({type:'structural_persistence',eventDate:right.confirmationDate,confirmedAt:right.confirmationDate}),pivotType:'extreme'},continued={...next,startDate:left.pivotDate,durationDays:daysBetween(left.pivotDate,next.endDate)};
-          regimes.splice(index+1,2,continued);pivots.splice(index,2,directPivot);continue;
+
+    function absorbInternalSwing(startIndex, resumedIndex, previous, resumed, invalidationDate, reason) {
+      const absorbed = pivots.slice(startIndex, resumedIndex);
+      for (const pivot of absorbed) {
+        invalidations.push(Object.freeze({
+          candidateDate: pivot.pivotDate,
+          regimeBoundaryDate: pivot.regimeBoundaryDate,
+          invalidationDate,
+          reason,
+          structuralClassification: 'internal_swing',
+          replacedBy: resumed.endDate,
+        }));
+      }
+      const merged = {
+        ...previous,
+        endDate: resumed.endDate,
+        durationDays: daysBetween(previous.startDate, resumed.endDate),
+      };
+      regimes.splice(startIndex, resumedIndex - startIndex + 1, merged);
+      pivots.splice(startIndex, resumedIndex - startIndex);
+      return Math.max(0, startIndex - 1);
+    }
+
+    let index = 0;
+    while (index < regimes.length - 2) {
+      const previous = regimes[index];
+      const middle = regimes[index + 1];
+      const next = regimes[index + 2];
+      const left = pivots[index];
+      const right = pivots[index + 1];
+
+      if (directional(previous.type) && middle?.type === 'sideways' && directional(next?.type) && next.type !== previous.type && left && right) {
+        const transitionValues = valuesBetween(left.pivotDate, right.pivotDate);
+        const transitionIsBrief = middle.durationDays < middle.requiredMinimumDays;
+        const sameExtreme = left.pivotDate === right.pivotDate;
+        if (sameExtreme || transitionIsBrief || (transitionValues.length > 1 && efficiency(transitionValues) > ANALYSIS_POLICY.scale.sidewaysEfficiency)) {
+          const directPivot = {
+            ...left,
+            nextRegime: next.type,
+            breakoutOrBreakdownDate: null,
+            confirmationDate: right.confirmationDate,
+            confirmationEvidence: Object.freeze({
+              type: 'structural_persistence',
+              eventDate: right.confirmationDate,
+              confirmedAt: right.confirmationDate,
+            }),
+            pivotType: 'extreme',
+          };
+          const continued = {
+            ...next,
+            startDate: left.pivotDate,
+            durationDays: daysBetween(left.pivotDate, next.endDate),
+          };
+          regimes.splice(index + 1, 2, continued);
+          pivots.splice(index, 2, directPivot);
+          continue;
         }
       }
       index++;
     }
-    index=0;
-    while(index<regimes.length-2){
-      const previous=regimes[index];
-      const resumedIndex=regimes.findIndex((item,candidateIndex)=>candidateIndex>index+1&&item.type===previous.type);if(resumedIndex<0){index++;continue;}
-      const left=pivots[index],right=pivots[resumedIndex-1],resumed=regimes[resumedIndex];if(!left||!right){index++;continue;}
-      const transient=transientBetween(previous,resumed,left,right);
-      if(!directional(previous.type)){
-        const previousValues=valuesBetween(previous.startDate,left.pivotDate),resumedValues=valuesBetween(resumed.confirmationDate||right.pivotDate,resumed.endDate);if(previous.type!=='sideways'||!previousValues.length||!resumedValues.length){index++;continue;}const bandLow=Math.min(...previousValues)-path.threshold,bandHigh=Math.max(...previousValues)+path.threshold,returnedToRange=resumedValues.some(value=>value>=bandLow&&value<=bandHigh),rangeRestored=efficiency(resumedValues)<=ANALYSIS_POLICY.scale.sidewaysEfficiency;if(!transient||!returnedToRange||!rangeRestored){index++;continue;}index=absorbInternalSwing(index,resumedIndex,previous,resumed,right.confirmationDate,'transient_excursion');continue;
+
+    index = 0;
+    while (index < regimes.length - 2) {
+      const previous = regimes[index];
+      const resumedIndex = regimes.findIndex((item, candidateIndex) => candidateIndex > index + 1 && item.type === previous.type);
+      if (resumedIndex < 0) {
+        index++;
+        continue;
       }
-      const priorStart=valueOn(previous.startDate),priorExtreme=left.pivotValue,correctionValues=valuesBetween(left.pivotDate,right.pivotDate),resumedValues=valuesBetween(right.pivotDate,resumed.endDate);if(!Number.isFinite(priorStart)||!Number.isFinite(priorExtreme)||!correctionValues.length||!resumedValues.length){index++;continue;}
-      const priorAdvance=Math.abs(priorExtreme-priorStart),adverseExtreme=previous.type==='rising'?Math.min(...correctionValues):Math.max(...correctionValues),retracement=Math.abs(priorExtreme-adverseExtreme),resumedExtreme=previous.type==='rising'?Math.max(...resumedValues):Math.min(...resumedValues),madeNewExtreme=previous.type==='rising'?resumedExtreme>priorExtreme+path.threshold:resumedExtreme<priorExtreme-path.threshold,p=ANALYSIS_POLICY.correction,structuralDamage=retracement>=Math.max(priorAdvance*p.maximumRetracementFraction,path.threshold*p.maximumVolatilityUnits),rightIndex=indexOn(right.pivotDate),resumedEndIndex=indexOn(resumed.endDate),dominantResumption=resumptionDominates({excursionDays:daysBetween(left.pivotDate,right.pivotDate),resumptionDays:daysBetween(right.pivotDate,resumed.endDate),excursionMove:retracement,resumptionMove:Math.abs(resumedExtreme-adverseExtreme),madeNewExtreme,longTermDirection:rightIndex>=0&&resumedEndIndex>rightIndex&&pathDirection(source,rightIndex,resumedEndIndex,path.threshold)===previous.type});
-      if(!transient&&(!madeNewExtreme||structuralDamage&&!dominantResumption)){index++;continue;}
-      index=absorbInternalSwing(index,resumedIndex,previous,resumed,right.confirmationDate,transient?'transient_excursion':'trend_resumed');
+      const left = pivots[index];
+      const right = pivots[resumedIndex - 1];
+      const resumed = regimes[resumedIndex];
+      if (!left || !right) {
+        index++;
+        continue;
+      }
+
+      const transient = transientBetween(previous, resumed, left, right);
+      if (!directional(previous.type)) {
+        const previousValues = valuesBetween(previous.startDate, left.pivotDate);
+        const resumedValues = valuesBetween(resumed.confirmationDate || right.pivotDate, resumed.endDate);
+        if (previous.type !== 'sideways' || !previousValues.length || !resumedValues.length) {
+          index++;
+          continue;
+        }
+        const bandLow = Math.min(...previousValues) - path.threshold;
+        const bandHigh = Math.max(...previousValues) + path.threshold;
+        const returnedToRange = resumedValues.some((val) => val >= bandLow && val <= bandHigh);
+        const rangeRestored = efficiency(resumedValues) <= ANALYSIS_POLICY.scale.sidewaysEfficiency;
+        if (!transient || !returnedToRange || !rangeRestored) {
+          index++;
+          continue;
+        }
+        index = absorbInternalSwing(index, resumedIndex, previous, resumed, right.confirmationDate, 'transient_excursion');
+        continue;
+      }
+
+      const priorStart = valueOn(previous.startDate);
+      const priorExtreme = left.pivotValue;
+      const correctionValues = valuesBetween(left.pivotDate, right.pivotDate);
+      const resumedValues = valuesBetween(right.pivotDate, resumed.endDate);
+
+      if (!Number.isFinite(priorStart) || !Number.isFinite(priorExtreme) || !correctionValues.length || !resumedValues.length) {
+        index++;
+        continue;
+      }
+
+      const priorAdvance = Math.abs(priorExtreme - priorStart);
+      const adverseExtreme = previous.type === 'rising' ? Math.min(...correctionValues) : Math.max(...correctionValues);
+      const retracement = Math.abs(priorExtreme - adverseExtreme);
+      const resumedExtreme = previous.type === 'rising' ? Math.max(...resumedValues) : Math.min(...resumedValues);
+      const madeNewExtreme = previous.type === 'rising'
+        ? resumedExtreme > priorExtreme + path.threshold
+        : resumedExtreme < priorExtreme - path.threshold;
+      const p = ANALYSIS_POLICY.correction;
+      const structuralDamage = retracement >= Math.max(
+        priorAdvance * p.maximumRetracementFraction,
+        path.threshold * p.maximumVolatilityUnits,
+      );
+      const rightIndex = indexOn(right.pivotDate);
+      const resumedEndIndex = indexOn(resumed.endDate);
+      const dominantResumption = resumptionDominates({
+        excursionDays: daysBetween(left.pivotDate, right.pivotDate),
+        resumptionDays: daysBetween(right.pivotDate, resumed.endDate),
+        excursionMove: retracement,
+        resumptionMove: Math.abs(resumedExtreme - adverseExtreme),
+        madeNewExtreme,
+        longTermDirection: rightIndex >= 0 && resumedEndIndex > rightIndex && pathDirection(source, rightIndex, resumedEndIndex, path.threshold) === previous.type,
+      });
+
+      if (!transient && (!madeNewExtreme || (structuralDamage && !dominantResumption))) {
+        index++;
+        continue;
+      }
+
+      index = absorbInternalSwing(index, resumedIndex, previous, resumed, right.confirmationDate, transient ? 'transient_excursion' : 'trend_resumed');
     }
-    for(let pivotIndex=0;pivotIndex<pivots.length;pivotIndex++){const pivot=pivots[pivotIndex],next=pivots[pivotIndex+1];pivot.durationBefore=regimes[pivotIndex]?.durationDays||0;pivot.durationAfter=next?daysBetween(pivot.pivotDate,next.pivotDate):daysBetween(pivot.pivotDate,source.at(-1).time);Object.freeze(pivot);}
-    return Object.freeze({...path,regimes:Object.freeze(regimes.map(Object.freeze)),pivots:Object.freeze(pivots),invalidations:Object.freeze(invalidations.map(Object.freeze)),pending:null,online:false});
+
+    for (let pivotIndex = 0; pivotIndex < pivots.length; pivotIndex++) {
+      const pivot = pivots[pivotIndex];
+      const next = pivots[pivotIndex + 1];
+      pivot.durationBefore = regimes[pivotIndex]?.durationDays || 0;
+      pivot.durationAfter = next
+        ? daysBetween(pivot.pivotDate, next.pivotDate)
+        : daysBetween(pivot.pivotDate, source.at(-1).time);
+      Object.freeze(pivot);
+    }
+
+    return Object.freeze({
+      ...path,
+      regimes: Object.freeze(regimes.map(Object.freeze)),
+      pivots: Object.freeze(pivots),
+      invalidations: Object.freeze(invalidations.map(Object.freeze)),
+      pending: null,
+      online: false,
+    });
   }
-  function detectRetrospectiveRegimes(rows,options={}){const frequency=options.frequency||'M',minimumRegimeDays=options.minimumRegimeDays??structuralEvidenceDays(frequency);return consolidateRetrospectiveCorrections(rows,retrospectiveTrendPath(rows,{frequency,minimumRegimeDays}));}
-  function detectOnlineState(rows,options={}){return onlineTrendPath(rows,options);}
-  function detectRegimes(rows,options={}){return detectRetrospectiveRegimes(rows,options).regimes;}
-  function detectPivots(rows,options={}){return detectRetrospectiveRegimes(rows,options).pivots;}
-  function internalSwingInvalidation(path,pivot){return path?.invalidations?.find(item=>item.structuralClassification==='internal_swing'&&(item.candidateDate===pivot?.pivotDate||item.regimeBoundaryDate&&item.regimeBoundaryDate===pivot?.regimeBoundaryDate))||null;}
-  function majorStructuralPivots(rows,options={},resolvedPath=null,independentPivots=null){const path=resolvedPath||detectRetrospectiveRegimes(rows,options),independent=independentPivots||retrospectiveExtremePivots(rows,options),all=[...path.pivots,...independent.filter(pivot=>!internalSwingInvalidation(path,pivot))],unique=[...new Map(all.map(pivot=>[`${pivot.pivotDate}:${pivot.previousRegime}:${pivot.nextRegime}`,pivot])).values()];return Object.freeze(unique.sort((left,right)=>left.pivotDate.localeCompare(right.pivotDate)));}
-  function timingScore(offsetDays,window={before:92,after:31}){if(offsetDays<-window.before||offsetDays>window.after)return 0;const span=Math.max(1,window.before+window.after),elapsed=offsetDays+window.before;return Math.max(0,Math.min(100,(1-elapsed/span)*100));}
-  function durationScore(indicatorDays,marketDays){if(!Number.isFinite(marketDays)||marketDays<=0)return null;let score=Math.min(indicatorDays/marketDays,1)*100;if(marketDays<ANALYSIS_POLICY.marketDurationDays.shortCycle&&indicatorDays>marketDays*2)score*=Math.max(.7,marketDays*2/indicatorDays);return Math.min(100,score);}
-  function structuralPersistence(pivot,pivots=[],analysisEndDate=null){
-    if(!pivot?.pivotDate)return Object.freeze({durationDays:0,endDate:null,terminatedBy:null});
-    const direction=pivot.nextRegime,directional=direction==='rising'||direction==='falling',fallbackEnd=analysisEndDate||pivot.confirmationDate||pivot.pivotDate,subsequent=[...pivots].filter(item=>item.pivotDate>pivot.pivotDate).sort((left,right)=>left.pivotDate.localeCompare(right.pivotDate));
-    if(!directional){const endDate=subsequent[0]?.pivotDate||fallbackEnd;return Object.freeze({durationDays:Math.max(0,daysBetween(pivot.pivotDate,endDate)),endDate,terminatedBy:null});}
-    const opposite=direction==='rising'?'falling':'rising',terminal=[...pivots].filter(item=>item.pivotDate>pivot.pivotDate&&item.nextRegime===opposite).sort((left,right)=>left.pivotDate.localeCompare(right.pivotDate))[0]||null,endDate=terminal?.pivotDate||fallbackEnd;
-    return Object.freeze({durationDays:Math.max(0,daysBetween(pivot.pivotDate,endDate)),endDate,terminatedBy:terminal?opposite:null});
+
+  function detectRetrospectiveRegimes(rows, options = {}) {
+    const frequency = options.frequency || 'M';
+    const minimumRegimeDays = options.minimumRegimeDays ?? structuralEvidenceDays(frequency);
+    return consolidateRetrospectiveCorrections(rows, retrospectiveTrendPath(rows, { frequency, minimumRegimeDays }));
   }
-  function trendStrengthScore(pivot,threshold){const move=Math.abs((pivot.nextRegimeValue??pivot.pivotValue)-pivot.pivotValue),scale=Math.max(threshold||0,1e-9);return Math.min(100,move/scale*35);}
-  function structuralPersistenceScore(pivot){const duration=pivot.structuralPersistenceDays??pivot.durationAfter??0;return Math.min(100,duration/Math.max(1,pivot.requiredMinimumDays||1)*60);}
-  function structuralScore(pivot,threshold){const strength=trendStrengthScore(pivot,threshold),persistence=structuralPersistenceScore(pivot);return Math.min(100,40+strength*.35+persistence*.25);}
-  function referenceScore(timing,duration,structural=100){const w=ANALYSIS_POLICY.referenceWeights,validDuration=duration==null?100:duration;return structural*w.structural+timing*w.timing+validDuration*w.duration;}
-  function pearson(left,right){if(left.length!==right.length||left.length<2)return null;const lm=left.reduce((a,b)=>a+b,0)/left.length,rm=right.reduce((a,b)=>a+b,0)/right.length;let covariance=0,lv=0,rv=0;for(let index=0;index<left.length;index++){const a=left[index]-lm,b=right[index]-rm;covariance+=a*b;lv+=a*a;rv+=b*b;}return lv&&rv?covariance/Math.sqrt(lv*rv):null;}
-  function marketValuesAtDates(rows,dates){const source=validRows(rows),values=[];let index=0,last=null;for(const date of dates){while(index<source.length&&source[index].time<=date){last=source[index].value;index++;}values.push(last);}return values;}
-  const MARKET_REFERENCE_ROLE=Object.freeze({START:'up_start',PEAK:'down_start',TROUGH:'down_end'}),OPPOSITE_TRANSITION_ROLE=Object.freeze({up_start:'down_start',down_start:'up_start',down_end:'up_end',up_end:'down_end'}),TRANSITION_ROLES=Object.freeze({
-    'falling:rising':Object.freeze(['up_start','down_end']),'sideways:rising':Object.freeze(['up_start']),'rising:falling':Object.freeze(['down_start','up_end']),'sideways:falling':Object.freeze(['down_start']),'rising:sideways':Object.freeze(['up_end']),'falling:sideways':Object.freeze(['down_end'])
+
+  function detectOnlineState(rows, options = {}) {
+    return onlineTrendPath(rows, options);
+  }
+
+  function detectRegimes(rows, options = {}) {
+    return detectRetrospectiveRegimes(rows, options).regimes;
+  }
+
+  function detectPivots(rows, options = {}) {
+    return detectRetrospectiveRegimes(rows, options).pivots;
+  }
+
+  function internalSwingInvalidation(path, pivot) {
+    return path?.invalidations?.find((item) => {
+      return item.structuralClassification === 'internal_swing'
+        && (item.candidateDate === pivot?.pivotDate || (item.regimeBoundaryDate && item.regimeBoundaryDate === pivot?.regimeBoundaryDate));
+    }) || null;
+  }
+
+  function majorStructuralPivots(rows, options = {}, resolvedPath = null, independentPivots = null) {
+    const path = resolvedPath || detectRetrospectiveRegimes(rows, options);
+    const independent = independentPivots || retrospectiveExtremePivots(rows, options);
+    const all = [
+      ...path.pivots,
+      ...independent.filter((pivot) => !internalSwingInvalidation(path, pivot)),
+    ];
+    const unique = [
+      ...new Map(all.map((pivot) => [`${pivot.pivotDate}:${pivot.previousRegime}:${pivot.nextRegime}`, pivot])).values(),
+    ];
+    return Object.freeze(unique.sort((left, right) => left.pivotDate.localeCompare(right.pivotDate)));
+  }
+
+  function timingScore(offsetDays, window = { before: 92, after: 31 }) {
+    if (offsetDays < -window.before || offsetDays > window.after) {
+      return 0;
+    }
+    const span = Math.max(1, window.before + window.after);
+    const elapsed = offsetDays + window.before;
+    return Math.max(0, Math.min(100, (1 - elapsed / span) * 100));
+  }
+
+  function durationScore(indicatorDays, marketDays) {
+    if (!Number.isFinite(marketDays) || marketDays <= 0) {
+      return null;
+    }
+    let score = Math.min(indicatorDays / marketDays, 1) * 100;
+    if (marketDays < ANALYSIS_POLICY.marketDurationDays.shortCycle && indicatorDays > marketDays * 2) {
+      score *= Math.max(0.7, (marketDays * 2) / indicatorDays);
+    }
+    return Math.min(100, score);
+  }
+
+  function structuralPersistence(pivot, pivots = [], analysisEndDate = null) {
+    if (!pivot?.pivotDate) {
+      return Object.freeze({ durationDays: 0, endDate: null, terminatedBy: null });
+    }
+    const direction = pivot.nextRegime;
+    const directional = direction === 'rising' || direction === 'falling';
+    const fallbackEnd = analysisEndDate || pivot.confirmationDate || pivot.pivotDate;
+    const subsequent = [...pivots]
+      .filter((item) => item.pivotDate > pivot.pivotDate)
+      .sort((left, right) => left.pivotDate.localeCompare(right.pivotDate));
+
+    if (!directional) {
+      const endDate = subsequent[0]?.pivotDate || fallbackEnd;
+      return Object.freeze({
+        durationDays: Math.max(0, daysBetween(pivot.pivotDate, endDate)),
+        endDate,
+        terminatedBy: null,
+      });
+    }
+
+    const opposite = direction === 'rising' ? 'falling' : 'rising';
+    const terminal = [...pivots]
+      .filter((item) => item.pivotDate > pivot.pivotDate && item.nextRegime === opposite)
+      .sort((left, right) => left.pivotDate.localeCompare(right.pivotDate))[0] || null;
+    const endDate = terminal?.pivotDate || fallbackEnd;
+
+    return Object.freeze({
+      durationDays: Math.max(0, daysBetween(pivot.pivotDate, endDate)),
+      endDate,
+      terminatedBy: terminal ? opposite : null,
+    });
+  }
+
+  function trendStrengthScore(pivot, threshold) {
+    const move = Math.abs((pivot.nextRegimeValue ?? pivot.pivotValue) - pivot.pivotValue);
+    const scale = Math.max(threshold || 0, 1e-9);
+    return Math.min(100, (move / scale) * 35);
+  }
+
+  function structuralPersistenceScore(pivot) {
+    const duration = pivot.structuralPersistenceDays ?? pivot.durationAfter ?? 0;
+    return Math.min(100, (duration / Math.max(1, pivot.requiredMinimumDays || 1)) * 60);
+  }
+
+  function structuralScore(pivot, threshold) {
+    const strength = trendStrengthScore(pivot, threshold);
+    const persistence = structuralPersistenceScore(pivot);
+    return Math.min(100, 40 + strength * 0.35 + persistence * 0.25);
+  }
+
+  function referenceScore(timing, duration, structural = 100) {
+    const w = ANALYSIS_POLICY.referenceWeights;
+    const validDuration = duration == null ? 100 : duration;
+    return structural * w.structural + timing * w.timing + validDuration * w.duration;
+  }
+
+  function pearson(left, right) {
+    if (left.length !== right.length || left.length < 2) {
+      return null;
+    }
+    const lm = left.reduce((a, b) => a + b, 0) / left.length;
+    const rm = right.reduce((a, b) => a + b, 0) / right.length;
+    let covariance = 0;
+    let lv = 0;
+    let rv = 0;
+    for (let index = 0; index < left.length; index++) {
+      const a = left[index] - lm;
+      const b = right[index] - rm;
+      covariance += a * b;
+      lv += a * a;
+      rv += b * b;
+    }
+    return lv && rv ? covariance / Math.sqrt(lv * rv) : null;
+  }
+
+  function marketValuesAtDates(rows, dates) {
+    const source = validRows(rows);
+    const values = [];
+    let index = 0;
+    let last = null;
+    for (const date of dates) {
+      while (index < source.length && source[index].time <= date) {
+        last = source[index].value;
+        index++;
+      }
+      values.push(last);
+    }
+    return values;
+  }
+
+  const MARKET_REFERENCE_ROLE = Object.freeze({
+    START: 'up_start',
+    PEAK: 'down_start',
+    TROUGH: 'down_end',
   });
-  function structuralRelationship(referenceType,pivot){const referenceRole=MARKET_REFERENCE_ROLE[referenceType],roles=TRANSITION_ROLES[`${pivot?.previousRegime}:${pivot?.nextRegime}`]||Object.freeze([]);if(!referenceRole||pivot?.structuralAmbiguity===true||pivot?.confirmed===false)return'unclear';if(roles.includes(referenceRole))return'positive';if(roles.includes(OPPOSITE_TRANSITION_ROLE[referenceRole]))return'inverse';return'unclear';}
-  function relationshipForReference(indicatorRows,marketRows,meta,referenceType,referenceDate,pivot){
-    const policy=ANALYSIS_POLICY.relationship,relationship=structuralRelationship(referenceType,pivot),from=shiftMonths(referenceDate,-policy.windowMonths),to=shiftMonths(referenceDate,policy.windowMonths),indicator=validRows(indicatorRows).filter(row=>row.time>=from&&row.time<=to),diagnostic={relationship,confidence:0,bonus:0,lag:null,correlations:Object.freeze([])};
-    if(relationship==='unclear'||indicator.length<policy.minimumPairs+1||validRows(marketRows).length<policy.minimumPairs+1)return Object.freeze(diagnostic);
-    const dates=indicator.map(row=>row.time),market=marketValuesAtDates(marketRows,dates),indicatorChanges=[],marketChanges=[];
-    for(let index=1;index<indicator.length;index++){if(!Number.isFinite(market[index])||!Number.isFinite(market[index-1]))continue;indicatorChanges.push(indicator[index].value-indicator[index-1].value);marketChanges.push(market[index]-market[index-1]);}
-    const correlations=[];for(const lag of policy.lags[meta.frequency]||policy.lags.M){const left=[],right=[];for(let index=0;index<indicatorChanges.length;index++){const marketIndex=index+lag;if(marketIndex>=marketChanges.length)break;left.push(indicatorChanges[index]);right.push(marketChanges[marketIndex]);}const value=pearson(left,right);if(value!=null&&left.length>=policy.minimumPairs)correlations.push(Object.freeze({lag,value,pairs:left.length}));}
-    if(!correlations.length)return Object.freeze({...diagnostic,correlations:Object.freeze(correlations)});
-    const best=[...correlations].sort((a,b)=>Math.abs(b.value)-Math.abs(a.value))[0],significant=correlations.filter(item=>Math.abs(item.value)>=.2),bestSign=Math.sign(best.value),stability=significant.length?significant.filter(item=>Math.sign(item.value)===bestSign).length/significant.length:0,correlationRelation=bestSign>0?'positive':bestSign<0?'inverse':'unclear',agrees=relationship===correlationRelation,confidence=agrees?Math.abs(best.value)*stability:0,strongEvidence=agrees&&Math.abs(best.value)>=policy.minimumAbsoluteCorrelation&&stability>=policy.minimumSignStability,bonus=strongEvidence?Math.min(policy.maximumBonus,policy.maximumBonus*confidence):0;
-    return Object.freeze({relationship,confidence,bonus,lag:best.lag,correlations:Object.freeze(correlations)});
+
+  const OPPOSITE_TRANSITION_ROLE = Object.freeze({
+    up_start: 'down_start',
+    down_start: 'up_start',
+    down_end: 'up_end',
+    up_end: 'down_end',
+  });
+
+  const TRANSITION_ROLES = Object.freeze({
+    'falling:rising': Object.freeze(['up_start', 'down_end']),
+    'sideways:rising': Object.freeze(['up_start']),
+    'rising:falling': Object.freeze(['down_start', 'up_end']),
+    'sideways:falling': Object.freeze(['down_start']),
+    'rising:sideways': Object.freeze(['up_end']),
+    'falling:sideways': Object.freeze(['down_end']),
+  });
+
+  function structuralRelationship(referenceType, pivot) {
+    const referenceRole = MARKET_REFERENCE_ROLE[referenceType];
+    const roles = TRANSITION_ROLES[`${pivot?.previousRegime}:${pivot?.nextRegime}`] || Object.freeze([]);
+    if (!referenceRole || pivot?.structuralAmbiguity === true || pivot?.confirmed === false) {
+      return 'unclear';
+    }
+    if (roles.includes(referenceRole)) {
+      return 'positive';
+    }
+    if (roles.includes(OPPOSITE_TRANSITION_ROLE[referenceRole])) {
+      return 'inverse';
+    }
+    return 'unclear';
   }
-  function referenceCoverage(results){const eligible=[];for(const type of REFERENCE_ORDER){const result=results.find(item=>item.referenceType===type);if(!result||result.pivotRole!=='market-relevant'||result.relationshipStatus!=='aligned'||!['positive','inverse'].includes(result.cycleRelationship)||structuralRelationship(type,result)!==result.cycleRelationship||eligible.some(item=>sameStructuralPivot(item,result)))continue;eligible.push(result);}const count=eligible.length,bonus=ANALYSIS_POLICY.coverageBonusByCount[count]||0;return Object.freeze({count,bonus,references:Object.freeze(eligible.map(item=>item.referenceType))});}
-  function overallScore(results){if(!results.length)return 0;const scores=results.map(x=>x.score),best=Math.max(...scores),mean=scores.reduce((a,b)=>a+b,0)/scores.length,w=ANALYSIS_POLICY.overallWeights,coverage=referenceCoverage(results);return Math.min(100,best*w.best+mean*w.mean+coverage.bonus);}
-  function discoverReferenceCandidates(rows,referenceDate,options={}){if(!referenceDate)return Object.freeze({window:null,candidates:Object.freeze([]),path:null});const window=relevanceWindow(referenceDate),path=detectRetrospectiveRegimes(rows,options),independent=retrospectiveExtremePivots(rows,options),majorPivots=majorStructuralPivots(rows,options,path,independent),candidates=majorPivots.filter(pivot=>pivot.pivotDate>=window.from&&pivot.pivotDate<=window.to);return Object.freeze({window,candidates:Object.freeze(candidates),path,independent,majorPivots});}
-  function candidateValidation(candidate,path,minimumRegimeDays,rows=[],frequency='M',independentPivots=null){const absorbed=internalSwingInvalidation(path,candidate);if(absorbed)return Object.freeze({pivot:null,rejectionReason:'internal_swing'});const pathPivot=path.pivots.find(item=>item.pivotDate===candidate.pivotDate&&item.previousRegime===candidate.previousRegime&&item.nextRegime===candidate.nextRegime),fullPathPivots=independentPivots||retrospectiveExtremePivots(rows,{frequency,minimumRegimeDays}),independentPivot=fullPathPivots.find(item=>item.pivotDate===candidate.pivotDate&&item.previousRegime===candidate.previousRegime&&item.nextRegime===candidate.nextRegime),directionalExtreme=candidate.previousRegime==='rising'&&candidate.nextRegime==='falling'||candidate.previousRegime==='falling'&&candidate.nextRegime==='rising',pivot=directionalExtreme?independentPivot:pathPivot;if(!pivot){const invalidation=path.invalidations?.find(item=>item.candidateDate===candidate.regimeBoundaryDate||item.candidateDate===candidate.pivotDate),resumed=candidate.previousRegime==='rising'?'correction_resumed':candidate.previousRegime==='falling'?'rebound_resumed':null;return Object.freeze({pivot:null,rejectionReason:invalidation?.reason==='range_return'?'range_return':invalidation?resumed||invalidation.reason:'no_structural_pivot'});}if(pivot.previousRegime===pivot.nextRegime)return Object.freeze({pivot:null,rejectionReason:'insufficient_structure'});if(pivot.durationBefore<minimumRegimeDays||pivot.durationAfter<minimumRegimeDays)return Object.freeze({pivot:null,rejectionReason:'insufficient_regime'});return Object.freeze({pivot,rejectionReason:null});}
-  function validateRetrospectiveCandidate(candidate,path,minimumRegimeDays,rows=[],frequency='M'){return candidateValidation(candidate,path,minimumRegimeDays,rows,frequency).pivot;}
-  function resultForReference(rows,meta,referenceType,referenceDate,cycle,marketRows=[]){
-    if(!referenceDate)return Object.freeze({result:null,candidates:Object.freeze([]),nearMissCandidates:Object.freeze([]),technicalPivots:Object.freeze([]),regimes:Object.freeze([]),diagnostics:Object.freeze([])});
-    const marketDays=marketDuration(referenceType,cycle),requiredMinimumDays=requiredMinimumRegimeDays(marketDays),options={frequency:meta.frequency,minimumRegimeDays:requiredMinimumDays},discovery=discoverReferenceCandidates(rows,referenceDate,options),validationPath=discovery.path,structuralPivots=discovery.majorPivots,diagnostics=[],candidates=[];
-    for(const candidate of discovery.candidates){const validation=candidateValidation(candidate,validationPath,requiredMinimumDays,rows,meta.frequency,discovery.independent);if(!validation.pivot){diagnostics.push(Object.freeze({...candidate,marketReference:referenceType,structuralStatus:'rejected',requiredMinimumDays,rejectionReason:validation.rejectionReason}));continue;}const pivot=validation.pivot,pivotIndex=structuralPivots.findIndex(item=>sameStructuralPivot(item,pivot)),nextPivot=pivotIndex>=0?structuralPivots[pivotIndex+1]:null,postRows=validRows(rows).filter(row=>row.time>=pivot.pivotDate&&(!nextPivot||row.time<=nextPivot.pivotDate)),nextRegimeValue=pivot.nextRegime==='rising'?Math.max(...postRows.map(row=>row.value)):pivot.nextRegime==='falling'?Math.min(...postRows.map(row=>row.value)):pivot.pivotValue,persistence=structuralPersistence(pivot,structuralPivots,validRows(rows).at(-1)?.time),scoredPivot={...pivot,nextRegimeValue,requiredMinimumDays,structuralPersistenceDays:persistence.durationDays},strength=trendStrengthScore(scoredPivot,validationPath.threshold),persistenceScore=structuralPersistenceScore(scoredPivot),retracementDepth=Math.abs(nextRegimeValue-pivot.pivotValue)/Math.max(validationPath.threshold,Math.abs(pivot.pivotValue)*ANALYSIS_POLICY.scale.minimumFraction),offsetDays=daysBetween(referenceDate,pivot.pivotDate),timing=timingScore(offsetDays,discovery.window),duration=durationScore(persistence.durationDays,marketDays),structure=structuralScore(scoredPivot,validationPath.threshold),baseScore=referenceScore(timing,duration,structure),relationship=relationshipForReference(rows,marketRows,meta,referenceType,referenceDate,pivot),score=Math.min(100,baseScore+relationship.bonus),result=Object.freeze({...pivot,referenceType,referenceDate,offsetDays,timingScore:timing,structuralScore:structure,pivotSelectionScore:structure,trendStrengthScore:strength,structuralPersistenceScore:persistenceScore,structuralPersistenceDays:persistence.durationDays,structuralPersistenceEndDate:persistence.endDate,structuralPersistenceTerminatedBy:persistence.terminatedBy,retracementDepth,indicatorTrendDays:persistence.durationDays,marketTrendDays:marketDays,requiredMinimumDays,durationScore:duration,baseScore,relationship:relationship.relationship,relationshipConfidence:relationship.confidence,relationshipLag:relationship.lag,relationshipBonus:relationship.bonus,score,pivotRole:'market-relevant'});candidates.push(result);diagnostics.push(Object.freeze({...result,marketReference:referenceType,structuralStatus:'confirmed',actualRegimeDays:persistence.durationDays,rejectionReason:null}));}
-    const officialWindow=discovery.window,expandedWindow=nearMissWindow(referenceDate),nearMissCandidates=ANALYSIS_POLICY.nearMiss.enabled?structuralPivots.filter(pivot=>pivot.pivotDate>=expandedWindow.from&&pivot.pivotDate<=expandedWindow.to&&(pivot.pivotDate<officialWindow.from||pivot.pivotDate>officialWindow.to)).map(pivot=>{const validation=candidateValidation(pivot,validationPath,requiredMinimumDays,rows,meta.frequency,discovery.independent),relationship=structuralRelationship(referenceType,pivot);if(!validation.pivot||relationship==='unclear')return null;const pivotIndex=structuralPivots.findIndex(item=>sameStructuralPivot(item,pivot)),nextPivot=pivotIndex>=0?structuralPivots[pivotIndex+1]:null,postRows=validRows(rows).filter(row=>row.time>=pivot.pivotDate&&(!nextPivot||row.time<=nextPivot.pivotDate)),nextRegimeValue=pivot.nextRegime==='rising'?Math.max(...postRows.map(row=>row.value)):pivot.nextRegime==='falling'?Math.min(...postRows.map(row=>row.value)):pivot.pivotValue,persistence=structuralPersistence(pivot,structuralPivots,validRows(rows).at(-1)?.time),scoredPivot={...pivot,nextRegimeValue,requiredMinimumDays,structuralPersistenceDays:persistence.durationDays},structure=structuralScore(scoredPivot,validationPath.threshold);return Object.freeze({...pivot,referenceType,referenceDate,offsetDays:daysBetween(referenceDate,pivot.pivotDate),timingScore:0,structuralScore:structure,pivotSelectionScore:structure,score:0,baseScore:0,relationship,relationshipConfidence:0,relationshipBonus:0,pivotRole:'near-miss',markerStatus:'near_miss'});}):[],validNearMisses=Object.freeze(nearMissCandidates.filter(Boolean)),result=candidates.length===1?candidates[0]:null,technicalPivots=Object.freeze(structuralPivots.map(pivot=>Object.freeze({...pivot,pivotRole:'technical'})));if(!discovery.candidates.length)diagnostics.push(Object.freeze({marketReference:referenceType,structuralStatus:'rejected',rejectionReason:'no_structural_pivot_in_relevance_window'}));return Object.freeze({result,candidates:Object.freeze(candidates),nearMissCandidates:validNearMisses,technicalPivots,regimes:validationPath.regimes,diagnostics:Object.freeze(diagnostics)});
+
+  function relationshipForReference(indicatorRows, marketRows, meta, referenceType, referenceDate, pivot) {
+    const policy = ANALYSIS_POLICY.relationship;
+    const relationship = structuralRelationship(referenceType, pivot);
+    const from = shiftMonths(referenceDate, -policy.windowMonths);
+    const to = shiftMonths(referenceDate, policy.windowMonths);
+    const indicator = validRows(indicatorRows).filter((row) => row.time >= from && row.time <= to);
+    const diagnostic = { relationship, confidence: 0, bonus: 0, lag: null, correlations: Object.freeze([]) };
+
+    if (relationship === 'unclear' || indicator.length < policy.minimumPairs + 1 || validRows(marketRows).length < policy.minimumPairs + 1) {
+      return Object.freeze(diagnostic);
+    }
+
+    const dates = indicator.map((row) => row.time);
+    const market = marketValuesAtDates(marketRows, dates);
+    const indicatorChanges = [];
+    const marketChanges = [];
+
+    for (let index = 1; index < indicator.length; index++) {
+      if (!Number.isFinite(market[index]) || !Number.isFinite(market[index - 1])) {
+        continue;
+      }
+      indicatorChanges.push(indicator[index].value - indicator[index - 1].value);
+      marketChanges.push(market[index] - market[index - 1]);
+    }
+
+    const correlations = [];
+    const lags = policy.lags[meta.frequency] || policy.lags.M;
+    for (const lag of lags) {
+      const left = [];
+      const right = [];
+      for (let index = 0; index < indicatorChanges.length; index++) {
+        const marketIndex = index + lag;
+        if (marketIndex >= marketChanges.length) {
+          break;
+        }
+        left.push(indicatorChanges[index]);
+        right.push(marketChanges[marketIndex]);
+      }
+      const val = pearson(left, right);
+      if (val != null && left.length >= policy.minimumPairs) {
+        correlations.push(Object.freeze({ lag, value: val, pairs: left.length }));
+      }
+    }
+
+    if (!correlations.length) {
+      return Object.freeze({ ...diagnostic, correlations: Object.freeze(correlations) });
+    }
+
+    const best = [...correlations].sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0];
+    const significant = correlations.filter((item) => Math.abs(item.value) >= 0.2);
+    const bestSign = Math.sign(best.value);
+    const stability = significant.length
+      ? significant.filter((item) => Math.sign(item.value) === bestSign).length / significant.length
+      : 0;
+    const correlationRelation = bestSign > 0 ? 'positive' : bestSign < 0 ? 'inverse' : 'unclear';
+    const agrees = relationship === correlationRelation;
+    const confidence = agrees ? Math.abs(best.value) * stability : 0;
+    const strongEvidence = agrees
+      && Math.abs(best.value) >= policy.minimumAbsoluteCorrelation
+      && stability >= policy.minimumSignStability;
+    const bonus = strongEvidence ? Math.min(policy.maximumBonus, policy.maximumBonus * confidence) : 0;
+
+    return Object.freeze({
+      relationship,
+      confidence,
+      bonus,
+      lag: best.lag,
+      correlations: Object.freeze(correlations),
+    });
   }
-  function sameStructuralPivot(left,right){return Boolean(left&&right&&((left.pivotDate&&left.pivotDate===right.pivotDate)||(left.regimeBoundaryDate&&left.regimeBoundaryDate===right.regimeBoundaryDate)));}
-  function assignReferencePivots(referenceAnalyses){
-    const certainty=item=>item?.pivotSelectionScore??item?.structuralScore??0,proximity=item=>Math.abs(Number.isFinite(item.offsetDays)?item.offsetDays:daysBetween(item.referenceDate||item.pivotDate,item.pivotDate)),similarity=ANALYSIS_POLICY.pivotSelection.structuralSimilarityPoints;
-    function select(candidates){if(!candidates.length)return null;const strongest=Math.max(...candidates.map(certainty)),structurallySimilar=candidates.filter(item=>strongest-certainty(item)<=similarity);return[...structurallySimilar].sort((left,right)=>proximity(left)-proximity(right)||certainty(right)-certainty(left)||(left.pivotDate||'').localeCompare(right.pivotDate||''))[0];}
-    function relationshipSupport(relationship){const used=[],chosen=[];for(const type of REFERENCE_ORDER){const candidates=(referenceAnalyses[type]?.candidates||[]).filter(item=>item.relationship===relationship&&!used.some(previous=>sameStructuralPivot(previous,item))),selected=select(candidates);if(!selected)continue;chosen.push(selected);used.push(selected);}return chosen.reduce((sum,item)=>sum+certainty(item),0);}
-    const positiveSupport=relationshipSupport('positive'),inverseSupport=relationshipSupport('inverse'),relationshipTotal=positiveSupport+inverseSupport,relationshipWinner=positiveSupport===inverseSupport?null:positiveSupport>inverseSupport?'positive':'inverse',dominanceShare=relationshipWinner&&relationshipTotal?(relationshipWinner==='positive'?positiveSupport:inverseSupport)/relationshipTotal:0,preferredRelationship=relationshipWinner&&dominanceShare>=ANALYSIS_POLICY.cycleRelationship.minimumDominanceShare?relationshipWinner:null,used=[],assigned={};
-    for(const type of REFERENCE_ORDER){const available=(referenceAnalyses[type]?.candidates||[]).filter(item=>!used.some(previous=>sameStructuralPivot(previous,item))),roleMatched=preferredRelationship?available.filter(item=>item.relationship===preferredRelationship):[],selected=select(roleMatched.length?roleMatched:available);assigned[type]=selected||null;if(selected)used.push(selected);}
+
+  function referenceCoverage(results) {
+    const eligible = [];
+    for (const type of REFERENCE_ORDER) {
+      const result = results.find((item) => item.referenceType === type);
+      if (!result
+        || result.pivotRole !== 'market-relevant'
+        || result.relationshipStatus !== 'aligned'
+        || !['positive', 'inverse'].includes(result.cycleRelationship)
+        || structuralRelationship(type, result) !== result.cycleRelationship
+        || eligible.some((item) => sameStructuralPivot(item, result))) {
+        continue;
+      }
+      eligible.push(result);
+    }
+    const count = eligible.length;
+    const bonus = ANALYSIS_POLICY.coverageBonusByCount[count] || 0;
+    return Object.freeze({
+      count,
+      bonus,
+      references: Object.freeze(eligible.map((item) => item.referenceType)),
+    });
+  }
+
+  function overallScore(results) {
+    if (!results.length) {
+      return 0;
+    }
+    const scores = results.map((x) => x.score);
+    const best = Math.max(...scores);
+    const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const w = ANALYSIS_POLICY.overallWeights;
+    const coverage = referenceCoverage(results);
+    return Math.min(100, best * w.best + mean * w.mean + coverage.bonus);
+  }
+
+  function discoverReferenceCandidates(rows, referenceDate, options = {}) {
+    if (!referenceDate) {
+      return Object.freeze({
+        window: null,
+        candidates: Object.freeze([]),
+        path: null,
+      });
+    }
+    const window = relevanceWindow(referenceDate);
+    const path = detectRetrospectiveRegimes(rows, options);
+    const independent = retrospectiveExtremePivots(rows, options);
+    const majorPivots = majorStructuralPivots(rows, options, path, independent);
+    const candidates = majorPivots.filter((pivot) => pivot.pivotDate >= window.from && pivot.pivotDate <= window.to);
+    return Object.freeze({
+      window,
+      candidates: Object.freeze(candidates),
+      path,
+      independent,
+      majorPivots,
+    });
+  }
+
+  function candidateValidation(candidate, path, minimumRegimeDays, rows = [], frequency = 'M', independentPivots = null) {
+    const absorbed = internalSwingInvalidation(path, candidate);
+    if (absorbed) {
+      return Object.freeze({ pivot: null, rejectionReason: 'internal_swing' });
+    }
+    const pathPivot = path.pivots.find((item) => {
+      return item.pivotDate === candidate.pivotDate
+        && item.previousRegime === candidate.previousRegime
+        && item.nextRegime === candidate.nextRegime;
+    });
+    const fullPathPivots = independentPivots || retrospectiveExtremePivots(rows, { frequency, minimumRegimeDays });
+    const independentPivot = fullPathPivots.find((item) => {
+      return item.pivotDate === candidate.pivotDate
+        && item.previousRegime === candidate.previousRegime
+        && item.nextRegime === candidate.nextRegime;
+    });
+    const directionalExtreme = (candidate.previousRegime === 'rising' && candidate.nextRegime === 'falling')
+      || (candidate.previousRegime === 'falling' && candidate.nextRegime === 'rising');
+    const pivot = directionalExtreme ? independentPivot : pathPivot;
+
+    if (!pivot) {
+      const invalidation = path.invalidations?.find((item) => {
+        return item.candidateDate === candidate.regimeBoundaryDate || item.candidateDate === candidate.pivotDate;
+      });
+      const resumed = candidate.previousRegime === 'rising'
+        ? 'correction_resumed'
+        : candidate.previousRegime === 'falling'
+          ? 'rebound_resumed'
+          : null;
+      return Object.freeze({
+        pivot: null,
+        rejectionReason: invalidation?.reason === 'range_return' ? 'range_return' : invalidation ? resumed || invalidation.reason : 'no_structural_pivot',
+      });
+    }
+    if (pivot.previousRegime === pivot.nextRegime) {
+      return Object.freeze({ pivot: null, rejectionReason: 'insufficient_structure' });
+    }
+    if (pivot.durationBefore < minimumRegimeDays || pivot.durationAfter < minimumRegimeDays) {
+      return Object.freeze({ pivot: null, rejectionReason: 'insufficient_regime' });
+    }
+    return Object.freeze({ pivot, rejectionReason: null });
+  }
+
+  function validateRetrospectiveCandidate(candidate, path, minimumRegimeDays, rows = [], frequency = 'M') {
+    return candidateValidation(candidate, path, minimumRegimeDays, rows, frequency).pivot;
+  }
+
+  function resultForReference(rows, meta, referenceType, referenceDate, cycle, marketRows = []) {
+    if (!referenceDate) {
+      return Object.freeze({
+        result: null,
+        candidates: Object.freeze([]),
+        nearMissCandidates: Object.freeze([]),
+        technicalPivots: Object.freeze([]),
+        regimes: Object.freeze([]),
+        diagnostics: Object.freeze([]),
+      });
+    }
+
+    const marketDays = marketDuration(referenceType, cycle);
+    const requiredMinimumDays = requiredMinimumRegimeDays(marketDays);
+    const options = { frequency: meta.frequency, minimumRegimeDays: requiredMinimumDays };
+    const discovery = discoverReferenceCandidates(rows, referenceDate, options);
+    const validationPath = discovery.path;
+    const structuralPivots = discovery.majorPivots;
+    const diagnostics = [];
+    const candidates = [];
+
+    for (const candidate of discovery.candidates) {
+      const validation = candidateValidation(candidate, validationPath, requiredMinimumDays, rows, meta.frequency, discovery.independent);
+      if (!validation.pivot) {
+        diagnostics.push(Object.freeze({
+          ...candidate,
+          marketReference: referenceType,
+          structuralStatus: 'rejected',
+          requiredMinimumDays,
+          rejectionReason: validation.rejectionReason,
+        }));
+        continue;
+      }
+      const pivot = validation.pivot;
+      const pivotIndex = structuralPivots.findIndex((item) => sameStructuralPivot(item, pivot));
+      const nextPivot = pivotIndex >= 0 ? structuralPivots[pivotIndex + 1] : null;
+      const postRows = validRows(rows).filter((row) => row.time >= pivot.pivotDate && (!nextPivot || row.time <= nextPivot.pivotDate));
+      const nextRegimeValue = pivot.nextRegime === 'rising'
+        ? Math.max(...postRows.map((row) => row.value))
+        : pivot.nextRegime === 'falling'
+          ? Math.min(...postRows.map((row) => row.value))
+          : pivot.pivotValue;
+      const persistence = structuralPersistence(pivot, structuralPivots, validRows(rows).at(-1)?.time);
+      const scoredPivot = {
+        ...pivot,
+        nextRegimeValue,
+        requiredMinimumDays,
+        structuralPersistenceDays: persistence.durationDays,
+      };
+      const strength = trendStrengthScore(scoredPivot, validationPath.threshold);
+      const persistenceScore = structuralPersistenceScore(scoredPivot);
+      const retracementDepth = Math.abs(nextRegimeValue - pivot.pivotValue) / Math.max(validationPath.threshold, Math.abs(pivot.pivotValue) * ANALYSIS_POLICY.scale.minimumFraction);
+      const offsetDays = daysBetween(referenceDate, pivot.pivotDate);
+      const timing = timingScore(offsetDays, discovery.window);
+      const duration = durationScore(persistence.durationDays, marketDays);
+      const structure = structuralScore(scoredPivot, validationPath.threshold);
+      const baseScore = referenceScore(timing, duration, structure);
+      const relationship = relationshipForReference(rows, marketRows, meta, referenceType, referenceDate, pivot);
+      const score = Math.min(100, baseScore + relationship.bonus);
+      const result = Object.freeze({
+        ...pivot,
+        referenceType,
+        referenceDate,
+        offsetDays,
+        timingScore: timing,
+        structuralScore: structure,
+        pivotSelectionScore: structure,
+        trendStrengthScore: strength,
+        structuralPersistenceScore: persistenceScore,
+        structuralPersistenceDays: persistence.durationDays,
+        structuralPersistenceEndDate: persistence.endDate,
+        structuralPersistenceTerminatedBy: persistence.terminatedBy,
+        retracementDepth,
+        indicatorTrendDays: persistence.durationDays,
+        marketTrendDays: marketDays,
+        requiredMinimumDays,
+        durationScore: duration,
+        baseScore,
+        relationship: relationship.relationship,
+        relationshipConfidence: relationship.confidence,
+        relationshipLag: relationship.lag,
+        relationshipBonus: relationship.bonus,
+        score,
+        pivotRole: 'market-relevant',
+      });
+      candidates.push(result);
+      diagnostics.push(Object.freeze({
+        ...result,
+        marketReference: referenceType,
+        structuralStatus: 'confirmed',
+        actualRegimeDays: persistence.durationDays,
+        rejectionReason: null,
+      }));
+    }
+
+    const officialWindow = discovery.window;
+    const expandedWindow = nearMissWindow(referenceDate);
+    const nearMissCandidates = ANALYSIS_POLICY.nearMiss.enabled ? structuralPivots
+      .filter((pivot) => {
+        return pivot.pivotDate >= expandedWindow.from
+          && pivot.pivotDate <= expandedWindow.to
+          && (pivot.pivotDate < officialWindow.from || pivot.pivotDate > officialWindow.to);
+      })
+      .map((pivot) => {
+        const validation = candidateValidation(pivot, validationPath, requiredMinimumDays, rows, meta.frequency, discovery.independent);
+        const relationship = structuralRelationship(referenceType, pivot);
+        if (!validation.pivot || relationship === 'unclear') {
+          return null;
+        }
+        const pivotIndex = structuralPivots.findIndex((item) => sameStructuralPivot(item, pivot));
+        const nextPivot = pivotIndex >= 0 ? structuralPivots[pivotIndex + 1] : null;
+        const postRows = validRows(rows).filter((row) => row.time >= pivot.pivotDate && (!nextPivot || row.time <= nextPivot.pivotDate));
+        const nextRegimeValue = pivot.nextRegime === 'rising'
+          ? Math.max(...postRows.map((row) => row.value))
+          : pivot.nextRegime === 'falling'
+            ? Math.min(...postRows.map((row) => row.value))
+            : pivot.pivotValue;
+        const persistence = structuralPersistence(pivot, structuralPivots, validRows(rows).at(-1)?.time);
+        const scoredPivot = {
+          ...pivot,
+          nextRegimeValue,
+          requiredMinimumDays,
+          structuralPersistenceDays: persistence.durationDays,
+        };
+        const structure = structuralScore(scoredPivot, validationPath.threshold);
+        return Object.freeze({
+          ...pivot,
+          referenceType,
+          referenceDate,
+          offsetDays: daysBetween(referenceDate, pivot.pivotDate),
+          timingScore: 0,
+          structuralScore: structure,
+          pivotSelectionScore: structure,
+          score: 0,
+          baseScore: 0,
+          relationship,
+          relationshipConfidence: 0,
+          relationshipBonus: 0,
+          pivotRole: 'near-miss',
+          markerStatus: 'near_miss',
+        });
+      }) : [];
+
+    const validNearMisses = Object.freeze(nearMissCandidates.filter(Boolean));
+    const result = candidates.length === 1 ? candidates[0] : null;
+    const technicalPivots = Object.freeze(structuralPivots.map((pivot) => Object.freeze({ ...pivot, pivotRole: 'technical' })));
+
+    if (!discovery.candidates.length) {
+      diagnostics.push(Object.freeze({
+        marketReference: referenceType,
+        structuralStatus: 'rejected',
+        rejectionReason: 'no_structural_pivot_in_relevance_window',
+      }));
+    }
+
+    return Object.freeze({
+      result,
+      candidates: Object.freeze(candidates),
+      nearMissCandidates: validNearMisses,
+      technicalPivots,
+      regimes: validationPath.regimes,
+      diagnostics: Object.freeze(diagnostics),
+    });
+  }
+
+  function sameStructuralPivot(left, right) {
+    return Boolean(left && right && (
+      (left.pivotDate && left.pivotDate === right.pivotDate)
+      || (left.regimeBoundaryDate && left.regimeBoundaryDate === right.regimeBoundaryDate)
+    ));
+  }
+
+  function assignReferencePivots(referenceAnalyses) {
+    const certainty = (item) => item?.pivotSelectionScore ?? item?.structuralScore ?? 0;
+    const proximity = (item) => Math.abs(Number.isFinite(item.offsetDays) ? item.offsetDays : daysBetween(item.referenceDate || item.pivotDate, item.pivotDate));
+    const similarity = ANALYSIS_POLICY.pivotSelection.structuralSimilarityPoints;
+
+    function select(candidates) {
+      if (!candidates.length) {
+        return null;
+      }
+      const strongest = Math.max(...candidates.map(certainty));
+      const structurallySimilar = candidates.filter((item) => strongest - certainty(item) <= similarity);
+      return [...structurallySimilar].sort((left, right) => {
+        return proximity(left) - proximity(right)
+          || certainty(right) - certainty(left)
+          || (left.pivotDate || '').localeCompare(right.pivotDate || '');
+      })[0];
+    }
+
+    function relationshipSupport(relationship) {
+      const used = [];
+      const chosen = [];
+      for (const type of REFERENCE_ORDER) {
+        const candidates = (referenceAnalyses[type]?.candidates || [])
+          .filter((item) => item.relationship === relationship && !used.some((previous) => sameStructuralPivot(previous, item)));
+        const selected = select(candidates);
+        if (!selected) {
+          continue;
+        }
+        chosen.push(selected);
+        used.push(selected);
+      }
+      return chosen.reduce((sum, item) => sum + certainty(item), 0);
+    }
+
+    const positiveSupport = relationshipSupport('positive');
+    const inverseSupport = relationshipSupport('inverse');
+    const relationshipTotal = positiveSupport + inverseSupport;
+    const relationshipWinner = positiveSupport === inverseSupport
+      ? null
+      : positiveSupport > inverseSupport
+        ? 'positive'
+        : 'inverse';
+    const dominanceShare = relationshipWinner && relationshipTotal
+      ? (relationshipWinner === 'positive' ? positiveSupport : inverseSupport) / relationshipTotal
+      : 0;
+    const preferredRelationship = relationshipWinner && dominanceShare >= ANALYSIS_POLICY.cycleRelationship.minimumDominanceShare
+      ? relationshipWinner
+      : null;
+    const used = [];
+    const assigned = {};
+
+    for (const type of REFERENCE_ORDER) {
+      const available = (referenceAnalyses[type]?.candidates || [])
+        .filter((item) => !used.some((previous) => sameStructuralPivot(previous, item)));
+      const roleMatched = preferredRelationship
+        ? available.filter((item) => item.relationship === preferredRelationship)
+        : [];
+      const selected = select(roleMatched.length ? roleMatched : available);
+      assigned[type] = selected || null;
+      if (selected) {
+        used.push(selected);
+      }
+    }
+
     return Object.freeze(assigned);
   }
-  function applyCycleRelationship(byReference){const native=Object.fromEntries(REFERENCE_ORDER.map(type=>[type,byReference?.[type]||null])),hypothesisScores={positive:0,inverse:0};for(const type of REFERENCE_ORDER){const result=native[type];if(result?.relationship==='positive'||result?.relationship==='inverse')hypothesisScores[result.relationship]+=Math.max(0,result.pivotSelectionScore??result.structuralScore??0);}const total=hypothesisScores.positive+hypothesisScores.inverse,winner=hypothesisScores.positive===hypothesisScores.inverse?null:hypothesisScores.positive>hypothesisScores.inverse?'positive':'inverse',dominanceShare=winner&&total?hypothesisScores[winner]/total:0,cycleRelationship=winner&&dominanceShare>=ANALYSIS_POLICY.cycleRelationship.minimumDominanceShare?winner:'unresolved',normalized={};for(const type of REFERENCE_ORDER){const result=native[type];if(!result){normalized[type]=null;continue;}const nativeRelationship=result.relationship,aligned=cycleRelationship!=='unresolved'&&nativeRelationship===cycleRelationship,status=cycleRelationship==='unresolved'?'unresolved':nativeRelationship==='unclear'?'unresolved_evidence':aligned?'aligned':'conflict',relationship=cycleRelationship==='unresolved'?'unclear':cycleRelationship,relationshipConfidence=aligned?result.relationshipConfidence:0,relationshipBonus=aligned?result.relationshipBonus:0,score=Math.min(100,result.baseScore+relationshipBonus);normalized[type]=Object.freeze({...result,nativeRelationship,relationship,cycleRelationship,relationshipStatus:status,relationshipConfidence,relationshipBonus,score});}return Object.freeze({cycleRelationship,relationshipHypothesis:Object.freeze({...hypothesisScores,dominanceShare}),byReference:Object.freeze(normalized),results:Object.freeze(REFERENCE_ORDER.map(type=>normalized[type]).filter(Boolean))});}
-  function analysisEnd(item,cycle){return item.searchEnd||cycle.troughDate||cycle.peakDate||cycle.startDate;}
-  function analyzeHistorical(meta,rows,item,cycle,marketRows=[]){const source=validRows(rows),analysisRows=source,referenceAnalyses={},allRegimes=[],technicalPivots=[],diagnostics=[];for(const type of REFERENCE_ORDER){const referenceDate=cycle[`${type.toLowerCase()}Date`],reference=resultForReference(analysisRows,meta,type,referenceDate,cycle,marketRows);referenceAnalyses[type]=reference;allRegimes.push(...reference.regimes);technicalPivots.push(...reference.technicalPivots);diagnostics.push(...reference.diagnostics);}const cycleRelationshipResult=applyCycleRelationship(assignReferencePivots(referenceAnalyses)),byReference=cycleRelationshipResult.byReference,results=cycleRelationshipResult.results,used=results,nearMissReferences=Object.fromEntries(REFERENCE_ORDER.map(type=>[type,{candidates:byReference[type]?[]:(referenceAnalyses[type]?.nearMissCandidates||[]).filter(candidate=>!used.some(pivot=>sameStructuralPivot(pivot,candidate)))}])),nearMissAssigned=assignReferencePivots(nearMissReferences),nearMissPivots=Object.freeze(REFERENCE_ORDER.map(type=>nearMissAssigned[type]).filter(Boolean)),coverage=referenceCoverage(results),unique=(items,key)=>[...new Map(items.map(item=>[key(item),item])).values()],uniqueTechnical=Object.freeze(unique(technicalPivots,item=>`${item.pivotDate}:${item.previousRegime}:${item.nextRegime}`)),marketRelevantPivots=results;return Object.freeze({meta,rows:source,regimes:Object.freeze(unique(allRegimes,item=>`${item.type}:${item.startDate}`)),pivots:uniqueTechnical,technicalPivots:uniqueTechnical,marketRelevantPivots,nearMissPivots,cycleRelationship:cycleRelationshipResult.cycleRelationship,byReference,results,diagnostics:Object.freeze(diagnostics),overallScore:overallScore(results),referenceCoverageCount:coverage.count,coverageBonus:coverage.bonus,meaningfulReferenceCount:results.length,maxReferenceScore:results.length?Math.max(...results.map(x=>x.score)):0,visible:results.length>0||nearMissPivots.length>0});}
-  function currentBaseScore(state,quality,confirmedScore=0){const p=ANALYSIS_POLICY.currentScoring,q=Math.max(0,Math.min(100,quality||0))/100;if(state==='market_relevant_confirmed')return Math.min(p.marketRelevantMaximum,Math.max(0,confirmedScore));if(state==='structural_only')return q*p.structuralOnlyMaximum;if(state==='candidate')return q*p.candidateMaximum;if(state==='watch')return q*p.watchMaximum;return 0;}
-  function analyzeCurrent(meta,rows,startDate,endDate,context={}){
-    const data=validRows(rows).filter(row=>row.time>=startDate&&row.time<=endDate),path=detectOnlineState(data,{frequency:meta.frequency,minimumRegimeDays:ANALYSIS_POLICY.current.minimumRegimeDays}),latest=path.pivots.at(-1),pending=path.pending,referenceAnalyses={};
-    if(context.cycle&&context.item){for(const type of REFERENCE_ORDER){const date=context.cycle[`${type.toLowerCase()}Date`];referenceAnalyses[type]=resultForReference(data,meta,type,date,context.cycle,context.marketRows||[]);}}const cycleRelationshipResult=applyCycleRelationship(assignReferencePivots(referenceAnalyses)),byReference=Object.freeze(Object.fromEntries(REFERENCE_ORDER.map(type=>[type,cycleRelationshipResult.byReference[type]?Object.freeze({...cycleRelationshipResult.byReference[type],classification:'market_relevant_confirmed'}):null])));
-    const confirmedReferences=Object.freeze(REFERENCE_ORDER.map(type=>byReference[type]).filter(Boolean)),matchingReference=pivot=>pivot&&confirmedReferences.find(result=>sameStructuralPivot(result,pivot)),retainedPivot=latest||null,latestPivot=retainedPivot,matchedLatest=matchingReference(latestPivot),structuralResult=latestPivot?Object.freeze({...latestPivot,referenceType:'CURRENT_STRUCTURAL',referenceDate:endDate,offsetDays:daysBetween(endDate,latestPivot.pivotDate),pivotRole:matchedLatest?'market-relevant':'structural-only',classification:matchedLatest?'market_relevant_confirmed':'structural_only'}):null;
-    let status='watching',signalState='watching',signalDate=null,signalQuality=0;if(pending){status=pending.status;signalState=pending.status;signalDate=pending.candidateDate;signalQuality=pending.structuralQuality||0;}if(structuralResult){signalState=structuralResult.classification;signalDate=structuralResult.pivotDate;signalQuality=latestPivot.structuralQuality||100;if(!pending)status=signalState;}
-    const confirmedScore=confirmedReferences.length?Math.max(...confirmedReferences.map(result=>result.score)):0;if(confirmedScore>0&&signalState==='watching')signalState='market_relevant_confirmed';const provisionalBaseScore=currentBaseScore(signalState,signalQuality,matchedLatest?.score||0),confirmedBaseScore=currentBaseScore('market_relevant_confirmed',100,confirmedScore),baseScore=Math.max(provisionalBaseScore,confirmedBaseScore),synergyEligible=(signalState==='candidate'||signalState==='structural_only')&&Boolean(signalDate),evidence=Object.freeze({status,signalState,signalDate,signalQuality,pending,activeTrend:path.activeTrend,retainedPivot:pending?retainedPivot:null,pivot:!pending?latestPivot:null,result:!pending?structuralResult:null,provisionalBaseScore,confirmedBaseScore,baseScore,synergyBonus:0,score:baseScore,contribution:baseScore/100,synergyEligible,synergyGroup:Object.freeze([]),invalidations:path.invalidations,structuralStatus:signalState});
-    const result=evidence.result||null;return Object.freeze({meta,rows:data,regimes:path.regimes,pivots:path.pivots,results:Object.freeze(result?[result]:[]),cycleRelationship:cycleRelationshipResult.cycleRelationship,byReference:Object.freeze(byReference),confirmedReferences,evidence});
+
+  function applyCycleRelationship(byReference) {
+    const native = Object.fromEntries(REFERENCE_ORDER.map((type) => [type, byReference?.[type] || null]));
+    const hypothesisScores = { positive: 0, inverse: 0 };
+
+    for (const type of REFERENCE_ORDER) {
+      const result = native[type];
+      if (result?.relationship === 'positive' || result?.relationship === 'inverse') {
+        hypothesisScores[result.relationship] += Math.max(0, result.pivotSelectionScore ?? result.structuralScore ?? 0);
+      }
+    }
+
+    const total = hypothesisScores.positive + hypothesisScores.inverse;
+    const winner = hypothesisScores.positive === hypothesisScores.inverse
+      ? null
+      : hypothesisScores.positive > hypothesisScores.inverse
+        ? 'positive'
+        : 'inverse';
+    const dominanceShare = winner && total ? hypothesisScores[winner] / total : 0;
+    const cycleRelationship = winner && dominanceShare >= ANALYSIS_POLICY.cycleRelationship.minimumDominanceShare
+      ? winner
+      : 'unresolved';
+
+    const normalized = {};
+    for (const type of REFERENCE_ORDER) {
+      const result = native[type];
+      if (!result) {
+        normalized[type] = null;
+        continue;
+      }
+      const nativeRelationship = result.relationship;
+      const aligned = cycleRelationship !== 'unresolved' && nativeRelationship === cycleRelationship;
+      const status = cycleRelationship === 'unresolved'
+        ? 'unresolved'
+        : nativeRelationship === 'unclear'
+          ? 'unresolved_evidence'
+          : aligned
+            ? 'aligned'
+            : 'conflict';
+      const relationship = cycleRelationship === 'unresolved' ? 'unclear' : cycleRelationship;
+      const relationshipConfidence = aligned ? result.relationshipConfidence : 0;
+      const relationshipBonus = aligned ? result.relationshipBonus : 0;
+      const score = Math.min(100, result.baseScore + relationshipBonus);
+
+      normalized[type] = Object.freeze({
+        ...result,
+        nativeRelationship,
+        relationship,
+        cycleRelationship,
+        relationshipStatus: status,
+        relationshipConfidence,
+        relationshipBonus,
+        score,
+      });
+    }
+
+    return Object.freeze({
+      cycleRelationship,
+      relationshipHypothesis: Object.freeze({ ...hypothesisScores, dominanceShare }),
+      byReference: Object.freeze(normalized),
+      results: Object.freeze(REFERENCE_ORDER.map((type) => normalized[type]).filter(Boolean)),
+    });
   }
-  function applyCurrentSynergy(analyses){const p=ANALYSIS_POLICY.currentScoring,window=ANALYSIS_POLICY.synergyMonths,eligible=analyses.filter(item=>item.evidence?.synergyEligible&&item.evidence.signalDate);return Object.freeze(analyses.map(item=>{const evidence=item.evidence;if(!evidence)return item;const peers=evidence.synergyEligible?eligible.filter(peer=>peer.meta.code!==item.meta.code&&peer.evidence.signalDate>=shiftMonths(evidence.signalDate,-window.before)&&peer.evidence.signalDate<=shiftMonths(evidence.signalDate,window.after)):[],synergyBonus=Math.min(p.synergyMaximum,peers.length*p.synergyPerPeer),provisional=evidence.provisionalBaseScore??evidence.baseScore??0,confirmed=evidence.confirmedBaseScore??0,score=Math.min(100,Math.max(confirmed,provisional+synergyBonus)),nextEvidence=Object.freeze({...evidence,synergyBonus,score,contribution:score/100,synergyGroup:Object.freeze(peers.map(peer=>Object.freeze({code:peer.meta.code,title:peer.meta.title,date:peer.evidence.signalDate})))});return Object.freeze({...item,evidence:nextEvidence});}));}
-  function currentPivotProbability(analyses){const scored=applyCurrentSynergy(analyses),total=Math.max(1,scored.length),sum=scored.reduce((value,item)=>value+(item.evidence?.contribution||0),0),count=state=>scored.filter(item=>item.evidence?.signalState===state).length,probability=Math.min(100,Math.round(sum/total*100)),marketRelevant=scored.filter(item=>item.confirmedReferences?.length||item.evidence?.signalState==='market_relevant_confirmed').length;return Object.freeze({probability,marketRelevantCount:marketRelevant,structuralOnlyCount:count('structural_only'),candidateCount:count('candidate'),watchCount:count('watch'),invalidatedCount:scored.reduce((value,item)=>value+(item.evidence?.invalidations?.length||0),0)});}
-  function normalizeForDisplay(rows,from,to){const data=validRows(rows).filter(row=>row.time>=from&&row.time<=to);if(!data.length)return [];const values=data.map(row=>row.value),min=Math.min(...values),max=Math.max(...values),span=max-min;return data.map(row=>Object.freeze({time:row.time,value:span?(row.value-min)/span*100:50,rawValue:row.value}));}
-  function compareAnalyses(a,b){return b.overallScore-a.overallScore||b.meaningfulReferenceCount-a.meaningfulReferenceCount||b.maxReferenceScore-a.maxReferenceScore||a.meta.title.localeCompare(b.meta.title,'ko');}
-  window.MacroWatchHistoricalIndicatorAnalysis=Object.freeze({ANALYSIS_POLICY,REFERENCE_ORDER,MARKET_REFERENCE_ROLE,TRANSITION_ROLES,requiredMinimumRegimeDays,relevanceWindow,nearMissWindow,retrospectiveExtremePivots,detectRetrospectiveRegimes,detectOnlineState,detectRegimes,detectPivots,majorStructuralPivots,discoverReferenceCandidates,validateRetrospectiveCandidate,timingScore,durationScore,structuralPersistence,trendStrengthScore,structuralPersistenceScore,structuralScore,referenceScore,structuralRelationship,relationshipForReference,referenceCoverage,overallScore,resultForReference,assignReferencePivots,applyCycleRelationship,analyzeHistorical,analyzeCurrent,applyCurrentSynergy,currentPivotProbability,normalizeForDisplay,compareAnalyses,analysisEnd,displayWindow});
+
+  function analysisEnd(item, cycle) {
+    return item.searchEnd || cycle.troughDate || cycle.peakDate || cycle.startDate;
+  }
+
+  function analyzeHistorical(meta, rows, item, cycle, marketRows = []) {
+    const source = validRows(rows);
+    const analysisRows = source;
+    const referenceAnalyses = {};
+    const allRegimes = [];
+    const technicalPivots = [];
+    const diagnostics = [];
+
+    for (const type of REFERENCE_ORDER) {
+      const referenceDate = cycle[`${type.toLowerCase()}Date`];
+      const reference = resultForReference(analysisRows, meta, type, referenceDate, cycle, marketRows);
+      referenceAnalyses[type] = reference;
+      allRegimes.push(...reference.regimes);
+      technicalPivots.push(...reference.technicalPivots);
+      diagnostics.push(...reference.diagnostics);
+    }
+
+    const cycleRelationshipResult = applyCycleRelationship(assignReferencePivots(referenceAnalyses));
+    const byReference = cycleRelationshipResult.byReference;
+    const results = cycleRelationshipResult.results;
+    const used = results;
+
+    const nearMissReferences = Object.fromEntries(REFERENCE_ORDER.map((type) => [
+      type,
+      {
+        candidates: byReference[type]
+          ? []
+          : (referenceAnalyses[type]?.nearMissCandidates || []).filter((candidate) => !used.some((pivot) => sameStructuralPivot(pivot, candidate))),
+      },
+    ]));
+
+    const nearMissAssigned = assignReferencePivots(nearMissReferences);
+    const nearMissPivots = Object.freeze(REFERENCE_ORDER.map((type) => nearMissAssigned[type]).filter(Boolean));
+    const coverage = referenceCoverage(results);
+    const unique = (items, key) => [...new Map(items.map((item) => [key(item), item])).values()];
+    const uniqueTechnical = Object.freeze(unique(technicalPivots, (item) => `${item.pivotDate}:${item.previousRegime}:${item.nextRegime}`));
+    const marketRelevantPivots = results;
+
+    return Object.freeze({
+      meta,
+      rows: source,
+      regimes: Object.freeze(unique(allRegimes, (item) => `${item.type}:${item.startDate}`)),
+      pivots: uniqueTechnical,
+      technicalPivots: uniqueTechnical,
+      marketRelevantPivots,
+      nearMissPivots,
+      cycleRelationship: cycleRelationshipResult.cycleRelationship,
+      byReference,
+      results,
+      diagnostics: Object.freeze(diagnostics),
+      overallScore: overallScore(results),
+      referenceCoverageCount: coverage.count,
+      coverageBonus: coverage.bonus,
+      meaningfulReferenceCount: results.length,
+      maxReferenceScore: results.length ? Math.max(...results.map((x) => x.score)) : 0,
+      visible: results.length > 0 || nearMissPivots.length > 0,
+    });
+  }
+
+  function currentBaseScore(state, quality, confirmedScore = 0) {
+    const p = ANALYSIS_POLICY.currentScoring;
+    const q = Math.max(0, Math.min(100, quality || 0)) / 100;
+    if (state === 'market_relevant_confirmed') {
+      return Math.min(p.marketRelevantMaximum, Math.max(0, confirmedScore));
+    }
+    if (state === 'structural_only') {
+      return q * p.structuralOnlyMaximum;
+    }
+    if (state === 'candidate') {
+      return q * p.candidateMaximum;
+    }
+    if (state === 'watch') {
+      return q * p.watchMaximum;
+    }
+    return 0;
+  }
+
+  function analyzeCurrent(meta, rows, startDate, endDate, context = {}) {
+    const data = validRows(rows).filter((row) => row.time >= startDate && row.time <= endDate);
+    const path = detectOnlineState(data, { frequency: meta.frequency, minimumRegimeDays: ANALYSIS_POLICY.current.minimumRegimeDays });
+    const latest = path.pivots.at(-1);
+    const pending = path.pending;
+    const referenceAnalyses = {};
+
+    if (context.cycle && context.item) {
+      for (const type of REFERENCE_ORDER) {
+        const date = context.cycle[`${type.toLowerCase()}Date`];
+        referenceAnalyses[type] = resultForReference(data, meta, type, date, context.cycle, context.marketRows || []);
+      }
+    }
+
+    const cycleRelationshipResult = applyCycleRelationship(assignReferencePivots(referenceAnalyses));
+    const byReference = Object.freeze(Object.fromEntries(REFERENCE_ORDER.map((type) => [
+      type,
+      cycleRelationshipResult.byReference[type]
+        ? Object.freeze({ ...cycleRelationshipResult.byReference[type], classification: 'market_relevant_confirmed' })
+        : null,
+    ])));
+
+    const confirmedReferences = Object.freeze(REFERENCE_ORDER.map((type) => byReference[type]).filter(Boolean));
+    const matchingReference = (pivot) => pivot && confirmedReferences.find((result) => sameStructuralPivot(result, pivot));
+    const retainedPivot = latest || null;
+    const latestPivot = retainedPivot;
+    const matchedLatest = matchingReference(latestPivot);
+    const structuralResult = latestPivot ? Object.freeze({
+      ...latestPivot,
+      referenceType: 'CURRENT_STRUCTURAL',
+      referenceDate: endDate,
+      offsetDays: daysBetween(endDate, latestPivot.pivotDate),
+      pivotRole: matchedLatest ? 'market-relevant' : 'structural-only',
+      classification: matchedLatest ? 'market_relevant_confirmed' : 'structural_only',
+    }) : null;
+
+    let status = 'watching';
+    let signalState = 'watching';
+    let signalDate = null;
+    let signalQuality = 0;
+
+    if (pending) {
+      status = pending.status;
+      signalState = pending.status;
+      signalDate = pending.candidateDate;
+      signalQuality = pending.structuralQuality || 0;
+    }
+    if (structuralResult) {
+      signalState = structuralResult.classification;
+      signalDate = structuralResult.pivotDate;
+      signalQuality = latestPivot.structuralQuality || 100;
+      if (!pending) {
+        status = signalState;
+      }
+    }
+
+    const confirmedScore = confirmedReferences.length
+      ? Math.max(...confirmedReferences.map((result) => result.score))
+      : 0;
+    if (confirmedScore > 0 && signalState === 'watching') {
+      signalState = 'market_relevant_confirmed';
+    }
+
+    const provisionalBaseScore = currentBaseScore(signalState, signalQuality, matchedLatest?.score || 0);
+    const confirmedBaseScore = currentBaseScore('market_relevant_confirmed', 100, confirmedScore);
+    const baseScore = Math.max(provisionalBaseScore, confirmedBaseScore);
+    const synergyEligible = (signalState === 'candidate' || signalState === 'structural_only') && Boolean(signalDate);
+
+    const evidence = Object.freeze({
+      status,
+      signalState,
+      signalDate,
+      signalQuality,
+      pending,
+      activeTrend: path.activeTrend,
+      retainedPivot: pending ? retainedPivot : null,
+      pivot: !pending ? latestPivot : null,
+      result: !pending ? structuralResult : null,
+      provisionalBaseScore,
+      confirmedBaseScore,
+      baseScore,
+      synergyBonus: 0,
+      score: baseScore,
+      contribution: baseScore / 100,
+      synergyEligible,
+      synergyGroup: Object.freeze([]),
+      invalidations: path.invalidations,
+      structuralStatus: signalState,
+    });
+
+    const result = evidence.result || null;
+    return Object.freeze({
+      meta,
+      rows: data,
+      regimes: path.regimes,
+      pivots: path.pivots,
+      results: Object.freeze(result ? [result] : []),
+      cycleRelationship: cycleRelationshipResult.cycleRelationship,
+      byReference: Object.freeze(byReference),
+      confirmedReferences,
+      evidence,
+    });
+  }
+
+  function applyCurrentSynergy(analyses) {
+    const p = ANALYSIS_POLICY.currentScoring;
+    const window = ANALYSIS_POLICY.synergyMonths;
+    const eligible = analyses.filter((item) => item.evidence?.synergyEligible && item.evidence.signalDate);
+
+    return Object.freeze(analyses.map((item) => {
+      const evidence = item.evidence;
+      if (!evidence) {
+        return item;
+      }
+      const peers = evidence.synergyEligible
+        ? eligible.filter((peer) => {
+          return peer.meta.code !== item.meta.code
+            && peer.evidence.signalDate >= shiftMonths(evidence.signalDate, -window.before)
+            && peer.evidence.signalDate <= shiftMonths(evidence.signalDate, window.after);
+        })
+        : [];
+      const synergyBonus = Math.min(p.synergyMaximum, peers.length * p.synergyPerPeer);
+      const provisional = evidence.provisionalBaseScore ?? evidence.baseScore ?? 0;
+      const confirmed = evidence.confirmedBaseScore ?? 0;
+      const score = Math.min(100, Math.max(confirmed, provisional + synergyBonus));
+      const nextEvidence = Object.freeze({
+        ...evidence,
+        synergyBonus,
+        score,
+        contribution: score / 100,
+        synergyGroup: Object.freeze(peers.map((peer) => Object.freeze({
+          code: peer.meta.code,
+          title: peer.meta.title,
+          date: peer.evidence.signalDate,
+        }))),
+      });
+      return Object.freeze({ ...item, evidence: nextEvidence });
+    }));
+  }
+
+  function currentPivotProbability(analyses) {
+    const scored = applyCurrentSynergy(analyses);
+    const total = Math.max(1, scored.length);
+    const sum = scored.reduce((val, item) => val + (item.evidence?.contribution || 0), 0);
+    const count = (state) => scored.filter((item) => item.evidence?.signalState === state).length;
+    const probability = Math.min(100, Math.round((sum / total) * 100));
+    const marketRelevant = scored.filter((item) => item.confirmedReferences?.length || item.evidence?.signalState === 'market_relevant_confirmed').length;
+
+    return Object.freeze({
+      probability,
+      marketRelevantCount: marketRelevant,
+      structuralOnlyCount: count('structural_only'),
+      candidateCount: count('candidate'),
+      watchCount: count('watch'),
+      invalidatedCount: scored.reduce((val, item) => val + (item.evidence?.invalidations?.length || 0), 0),
+    });
+  }
+
+  function normalizeForDisplay(rows, from, to) {
+    const data = validRows(rows).filter((row) => row.time >= from && row.time <= to);
+    if (!data.length) {
+      return [];
+    }
+    const values = data.map((row) => row.value);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min;
+    return data.map((row) => Object.freeze({
+      time: row.time,
+      value: span ? ((row.value - min) / span) * 100 : 50,
+      rawValue: row.value,
+    }));
+  }
+
+  function compareAnalyses(a, b) {
+    return b.overallScore - a.overallScore
+      || b.meaningfulReferenceCount - a.meaningfulReferenceCount
+      || b.maxReferenceScore - a.maxReferenceScore
+      || a.meta.title.localeCompare(b.meta.title, 'ko');
+  }
+
+  window.MacroWatchHistoricalIndicatorAnalysis = Object.freeze({
+    ANALYSIS_POLICY,
+    REFERENCE_ORDER,
+    MARKET_REFERENCE_ROLE,
+    TRANSITION_ROLES,
+    requiredMinimumRegimeDays,
+    relevanceWindow,
+    nearMissWindow,
+    retrospectiveExtremePivots,
+    detectRetrospectiveRegimes,
+    detectOnlineState,
+    detectRegimes,
+    detectPivots,
+    majorStructuralPivots,
+    discoverReferenceCandidates,
+    validateRetrospectiveCandidate,
+    timingScore,
+    durationScore,
+    structuralPersistence,
+    trendStrengthScore,
+    structuralPersistenceScore,
+    structuralScore,
+    referenceScore,
+    structuralRelationship,
+    relationshipForReference,
+    referenceCoverage,
+    overallScore,
+    resultForReference,
+    assignReferencePivots,
+    applyCycleRelationship,
+    analyzeHistorical,
+    analyzeCurrent,
+    applyCurrentSynergy,
+    currentPivotProbability,
+    normalizeForDisplay,
+    compareAnalyses,
+    analysisEnd,
+    displayWindow,
+  });
 })();

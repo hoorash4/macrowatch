@@ -1,20 +1,34 @@
 (() => {
   'use strict';
+
   const utils = window.MacroWatchAnalysisChart;
   const supabaseClient = window.macroWatchSupabase || window.MacroWatchFrontend?.createSupabaseClient();
+
   const PROFILE = utils.chartProfile({
     axisMode: 'dual',
-    cursorSeries: Object.freeze([{ key: 'risk_index', label: '위험', format: value => utils.formatChartNumber(value, { maximumFractionDigits: 1 }) }]),
+    cursorSeries: Object.freeze([
+      { key: 'risk_index', label: '위험', format: (value) => utils.formatChartNumber(value, { maximumFractionDigits: 1 }) },
+    ]),
   });
-  const state = { years: String(PROFILE.defaultYears), rows: [] };
+
+  const state = {
+    years: String(PROFILE.defaultYears),
+    rows: [],
+  };
+
   const COLORS = {
     risk: '#b4535d',
     headline: '#64748b',
   };
+
   const { baseWidth: BASE_WIDTH, mainHeight: HEIGHT } = utils.chartLayout;
-  const PADDING = utils.chartPadding(PROFILE.axisMode, { top: utils.chartLayout.plot.top, bottom: utils.chartLayout.plot.bottom });
-  const timestamp = value => Date.parse(`${String(value)}T00:00:00Z`);
-  const monthLabel = value => String(value).slice(0, 7).replace('-', '.');
+  const PADDING = utils.chartPadding(PROFILE.axisMode, {
+    top: utils.chartLayout.plot.top,
+    bottom: utils.chartLayout.plot.bottom,
+  });
+
+  const timestamp = (value) => Date.parse(`${String(value)}T00:00:00Z`);
+  const monthLabel = (value) => String(value).slice(0, 7).replace('-', '.');
 
   function renderLegend() {
     const legend = document.getElementById('korea-small-business-risk-legend');
@@ -27,117 +41,191 @@
 
   function render() {
     const host = document.getElementById('korea-small-business-risk-chart');
-    if (!host) return;
+    if (!host) {
+      return;
+    }
+
     if (!state.rows.length) {
       host.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">저장된 중소기업 위험지수가 없습니다.</div>';
       return;
     }
+
     const rows = utils.rowsForRecentHistory(state.rows, 'month', state.years === '10' ? 10 : state.years);
-    const first = timestamp(rows[0].month), last = timestamp(rows.at(-1).month);
+    const first = timestamp(rows[0].month);
+    const last = timestamp(rows.at(-1).month);
     const width = utils.historyWidth(rows, 'month', state.years, BASE_WIDTH);
-    const x = row => PADDING.left + (timestamp(row.month) - first) / Math.max(1, last - first) * (width - PADDING.left - PADDING.right);
-    const riskValues = rows.map(row => Number(row.risk_index)).filter(Number.isFinite);
-    const headlineValues = rows.map(row => Number(row.headline_outlook_sbhi)).filter(Number.isFinite);
+
+    const x = (row) => PADDING.left + ((timestamp(row.month) - first) / Math.max(1, last - first)) * (width - PADDING.left - PADDING.right);
+
+    const riskValues = rows.map((row) => Number(row.risk_index)).filter(Number.isFinite);
+    const headlineValues = rows.map((row) => Number(row.headline_outlook_sbhi)).filter(Number.isFinite);
+
     const riskDomain = utils.axisDomain(riskValues, { minimumSpan: 10 });
     const headlineDomain = utils.axisDomain(headlineValues, { minimumSpan: 5 });
-    const riskY = value => PADDING.top + (riskDomain.max - value) / (riskDomain.max - riskDomain.min) * (HEIGHT - PADDING.top - PADDING.bottom);
-    const headlineY = value => PADDING.top + (value - headlineDomain.min) / (headlineDomain.max - headlineDomain.min) * (HEIGHT - PADDING.top - PADDING.bottom);
+
+    const riskY = (value) => PADDING.top + ((riskDomain.max - value) / (riskDomain.max - riskDomain.min)) * (HEIGHT - PADDING.top - PADDING.bottom);
+    const headlineY = (value) => PADDING.top + ((value - headlineDomain.min) / (headlineDomain.max - headlineDomain.min)) * (HEIGHT - PADDING.top - PADDING.bottom);
+
     const riskTicks = [...riskDomain.ticks].reverse();
-    const grid = riskTicks.map(value => `<line data-chart-grid x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${riskY(value)}" y2="${riskY(value)}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${PADDING.left - 9}" y="${riskY(value) + 4}" text-anchor="end" fill="#64748b" font-size="10">${utils.formatAxisNumber(value)}</text>`).join('');
+
+    const grid = riskTicks.map((value) => {
+      const yPos = riskY(value);
+      return `<line data-chart-grid x1="${PADDING.left}" x2="${width - PADDING.right}" y1="${yPos}" y2="${yPos}" stroke="#e2e8f0" stroke-dasharray="3 4"/><text data-chart-left-axis x="${PADDING.left - 9}" y="${yPos + 4}" text-anchor="end" fill="#64748b" font-size="10">${utils.formatAxisNumber(value)}</text>`;
+    }).join('');
+
     const rightAxis = utils.alignedSecondaryTicks(riskTicks, riskY, headlineDomain, PADDING.top, HEIGHT - PADDING.bottom, true)
-      .map(tick => `<text data-chart-right-axis x="${width - PADDING.right + 9}" y="${tick.y + 4}" text-anchor="start" fill="#64748b" font-size="10">${utils.formatAxisNumber(tick.value)}</text>`).join('');
-    const years = [...new Set(rows.map(row => String(row.month).slice(0, 4)))];
-    const guides = years.map(year => {
-      const point = rows.find(row => String(row.month).startsWith(year));
-      if (!point) return '';
+      .map((tick) => `<text data-chart-right-axis x="${width - PADDING.right + 9}" y="${tick.y + 4}" text-anchor="start" fill="#64748b" font-size="10">${utils.formatAxisNumber(tick.value)}</text>`)
+      .join('');
+
+    const years = [...new Set(rows.map((row) => String(row.month).slice(0, 4)))];
+    const guides = years.map((year) => {
+      const point = rows.find((row) => String(row.month).startsWith(year));
+      if (!point) {
+        return '';
+      }
       const pointX = x(point);
-      const guide = pointX > 65 ? `<line x1="${pointX}" x2="${pointX}" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" stroke="#edf0f4"/>` : '';
+      const guide = pointX > 65
+        ? `<line x1="${pointX}" x2="${pointX}" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" stroke="#edf0f4"/>`
+        : '';
       return `${guide}<text x="${pointX}" y="${HEIGHT - 16}" text-anchor="middle" class="analysis-chart-year-label">${year}</text>`;
     }).join('');
-    const riskPoints = rows.map(row => ({ x: x(row), y: riskY(Number(row.risk_index)) }));
+
+    const riskPoints = rows.map((row) => ({ x: x(row), y: riskY(Number(row.risk_index)) }));
     const riskSegments = utils.monotonePathSegments(
       riskPoints,
-      rows.map(row => row.is_provisional ? 'provisional' : 'final'),
+      rows.map((row) => (row.is_provisional ? 'provisional' : 'final')),
     );
-    const riskPaths = riskSegments.map(segment => `<path data-korea-small-business-risk-line d="${segment.path}" fill="none" stroke="${COLORS.risk}" stroke-width="${utils.lineWidths.primary}"${segment.key === 'provisional' ? ' stroke-dasharray="5 4"' : ''} stroke-linecap="round"/>`).join('');
-    const headlineRows = rows.filter(row => Number.isFinite(Number(row.headline_outlook_sbhi)));
-    const headlinePath = utils.monotoneSeriesPath(headlineRows, x, row => headlineY(Number(row.headline_outlook_sbhi)));
-    host.innerHTML = `<svg class="w-full" style="height:${HEIGHT}px" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국 중소기업 위험지수와 역방향 중소기업 경기전망 SBHI 월별 추이">${grid}${rightAxis}${guides}${riskPaths}<path data-small-business-headline-line d="${headlinePath}" fill="none" stroke="${COLORS.headline}" stroke-width="${utils.lineWidths.comparison}" stroke-linecap="round"/><rect data-korea-small-business-risk-hit x="${PADDING.left}" y="${PADDING.top}" width="${width - PADDING.left - PADDING.right}" height="${HEIGHT - PADDING.top - PADDING.bottom}" fill="transparent"/><line data-korea-small-business-risk-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/><text data-korea-small-business-risk-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-korea-small-business-risk-date x="0" y="${HEIGHT - PADDING.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail analysis-chart-cursor-text analysis-chart-cursor-date"></text></svg>`;
+    const riskPaths = riskSegments.map((segment) => {
+      const dash = segment.key === 'provisional' ? ' stroke-dasharray="5 4"' : '';
+      return `<path data-korea-small-business-risk-line d="${segment.path}" fill="none" stroke="${COLORS.risk}" stroke-width="${utils.lineWidths.primary}"${dash} stroke-linecap="round"/>`;
+    }).join('');
+
+    const headlineRows = rows.filter((row) => Number.isFinite(Number(row.headline_outlook_sbhi)));
+    const headlinePath = utils.monotoneSeriesPath(headlineRows, x, (row) => headlineY(Number(row.headline_outlook_sbhi)));
+
+    host.innerHTML = `
+      <svg class="w-full" style="height:${HEIGHT}px" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국 중소기업 위험지수와 역방향 중소기업 경기전망 SBHI 월별 추이">
+        ${grid}
+        ${rightAxis}
+        ${guides}
+        ${riskPaths}
+        <path data-small-business-headline-line d="${headlinePath}" fill="none" stroke="${COLORS.headline}" stroke-width="${utils.lineWidths.comparison}" stroke-linecap="round"/>
+        <rect data-korea-small-business-risk-hit x="${PADDING.left}" y="${PADDING.top}" width="${width - PADDING.left - PADDING.right}" height="${HEIGHT - PADDING.top - PADDING.bottom}" fill="transparent"/>
+        <line data-korea-small-business-risk-cursor x1="0" x2="0" y1="${PADDING.top}" y2="${HEIGHT - PADDING.bottom}" class="policy-expectation-cursor"/>
+        <text data-korea-small-business-risk-value x="0" y="16" text-anchor="middle" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text>
+        <text data-korea-small-business-risk-date x="0" y="${HEIGHT - PADDING.bottom + 14}" text-anchor="middle" class="policy-expectation-cursor-detail analysis-chart-cursor-text analysis-chart-cursor-date"></text>
+      </svg>
+    `.trim();
+
     utils.scrollableSvg(host.querySelector('svg'), width, BASE_WIDTH, {
       left: PADDING.left,
       right: PADDING.right,
       axisMode: PADDING.axisMode,
       top: PADDING.top,
       bottom: HEIGHT - PADDING.bottom,
-      axes: [{
-        side: 'left',
-        y: riskY,
-        points: rows.map(row => ({ x: x(row), value: Number(row.risk_index) })),
-        selector: '[data-korea-small-business-risk-line]',
-        format: value => utils.formatAxisNumber(value),
-      }, {
-        side: 'right',
-        y: headlineY,
-        points: headlineRows.map(row => ({ x: x(row), value: Number(row.headline_outlook_sbhi) })),
-        selector: '[data-small-business-headline-line]',
-        format: value => utils.formatAxisNumber(value),
-      }],
+      axes: [
+        {
+          side: 'left',
+          y: riskY,
+          points: rows.map((row) => ({ x: x(row), value: Number(row.risk_index) })),
+          selector: '[data-korea-small-business-risk-line]',
+          format: (value) => utils.formatAxisNumber(value),
+        },
+        {
+          side: 'right',
+          y: headlineY,
+          points: headlineRows.map((row) => ({ x: x(row), value: Number(row.headline_outlook_sbhi) })),
+          selector: '[data-small-business-headline-line]',
+          format: (value) => utils.formatAxisNumber(value),
+        },
+      ],
     });
+
     const frame = host.querySelector('[data-history-scroll]');
     const svg = frame?.querySelector('svg');
-    frame?.addEventListener('pointermove', event => {
+
+    frame?.addEventListener('pointermove', (event) => {
       const bounds = svg.getBoundingClientRect();
-      const pointerX = (event.clientX - bounds.left) / bounds.width * width;
-      const nearest = rows.reduce((closest, row) => Math.abs(x(row) - pointerX) < Math.abs(x(closest) - pointerX) ? row : closest);
+      const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+      const nearest = rows.reduce((closest, row) => {
+        return Math.abs(x(row) - pointerX) < Math.abs(x(closest) - pointerX) ? row : closest;
+      });
       const cursorX = x(nearest);
       const cursor = host.querySelector('[data-korea-small-business-risk-cursor]');
-      cursor.setAttribute('x1', cursorX); cursor.setAttribute('x2', cursorX); cursor.classList.add('is-visible');
+      cursor.setAttribute('x1', cursorX);
+      cursor.setAttribute('x2', cursorX);
+      cursor.classList.add('is-visible');
+
       const value = host.querySelector('[data-korea-small-business-risk-value]');
       value.setAttribute('visibility', 'visible');
       value.textContent = `${utils.cursorValueText(nearest, PROFILE.cursorSeries)}${nearest.is_provisional ? ' · 잠정치' : ''}`;
+
       const date = host.querySelector('[data-korea-small-business-risk-date]');
-      date.textContent = monthLabel(nearest.month); date.classList.add('is-visible');
+      date.textContent = monthLabel(nearest.month);
+      date.classList.add('is-visible');
+
       utils.positionCursorText(value, cursorX, frame);
       utils.positionCursorText(date, cursorX, frame);
     });
+
     frame?.addEventListener('pointerleave', () => {
       host.querySelector('[data-korea-small-business-risk-cursor]')?.classList.remove('is-visible');
       host.querySelector('[data-korea-small-business-risk-date]')?.classList.remove('is-visible');
       host.querySelector('[data-korea-small-business-risk-value]')?.setAttribute('visibility', 'hidden');
     });
+
     utils.scrollToLatest(frame);
   }
 
   async function load() {
     const host = document.getElementById('korea-small-business-risk-chart');
-    if (!host || !supabaseClient) return;
+    if (!host || !supabaseClient) {
+      return;
+    }
+
     const [risk, headline] = await Promise.all([
-      utils.loadAllRows((from, to) => supabaseClient.from('kr_small_business_risk_monthly')
-        .select('month,risk_index,is_provisional').order('month', { ascending: true }).range(from, to)),
-      utils.loadAllRows((from, to) => supabaseClient.from('economic_chart_series_points')
-        .select('observation_date,value').eq('series_code', 'KR_SME_HEADLINE_OUTLOOK')
-        .order('observation_date', { ascending: true }).range(from, to)),
+      utils.loadAllRows((from, to) => supabaseClient
+        .from('kr_small_business_risk_monthly')
+        .select('month,risk_index,is_provisional')
+        .order('month', { ascending: true })
+        .range(from, to)),
+      utils.loadAllRows((from, to) => supabaseClient
+        .from('economic_chart_series_points')
+        .select('observation_date,value')
+        .eq('series_code', 'KR_SME_HEADLINE_OUTLOOK')
+        .order('observation_date', { ascending: true })
+        .range(from, to)),
     ]);
+
     if (risk.error || headline.error) {
       host.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">중소기업 위험지수를 불러오지 못했습니다.</div>';
       return;
     }
+
     const headlineByMonth = new Map((headline.data || []).map((row) => [String(row.observation_date), Number(row.value)]));
-    state.rows = (risk.data || []).map((row) => ({ ...row, headline_outlook_sbhi: headlineByMonth.get(String(row.month)) }));
+    state.rows = (risk.data || []).map((row) => ({
+      ...row,
+      headline_outlook_sbhi: headlineByMonth.get(String(row.month)),
+    }));
+
     render();
   }
 
-  document.querySelectorAll('[data-korea-small-business-risk-range]').forEach(button => button.addEventListener('click', () => {
-    const years = button.dataset.koreaSmallBusinessRiskRange;
-    if (!years || years === state.years) return;
-    state.years = years;
-    document.querySelectorAll('[data-korea-small-business-risk-range]').forEach(item => {
-      const active = item.dataset.koreaSmallBusinessRiskRange === years;
-      item.classList.toggle('is-active', active);
-      item.setAttribute('aria-pressed', String(active));
+  document.querySelectorAll('[data-korea-small-business-risk-range]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const years = button.dataset.koreaSmallBusinessRiskRange;
+      if (!years || years === state.years) {
+        return;
+      }
+      state.years = years;
+      document.querySelectorAll('[data-korea-small-business-risk-range]').forEach((item) => {
+        const active = item.dataset.koreaSmallBusinessRiskRange === years;
+        item.classList.toggle('is-active', active);
+        item.setAttribute('aria-pressed', String(active));
+      });
+      render();
     });
-    render();
-  }));
+  });
 
   renderLegend();
   window.MacroWatchDashboard?.registerLoader(load);

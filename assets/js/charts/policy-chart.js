@@ -3,26 +3,43 @@
 
   const { mobileMinWidth: MIN_VIEWPORT_WIDTH, mainHeight: HEIGHT, axisWidth: Y_AXIS_WIDTH } = window.MacroWatchAnalysisChart.chartLayout;
   const PADDING = window.MacroWatchAnalysisChart.plotPadding();
+
   // 'legacy'로 바꾸면 DB의 기존 1000 누적 policy_index 표시로 즉시 원복됩니다.
   const POLICY_CHART_MODE = 'oscillator';
   const OSCILLATOR_RETENTION = 0.8;
   const STANDARD_MEETING_DAYS = 45;
   const chartUtils = window.MacroWatchAnalysisChart;
-  const PROFILE = chartUtils.chartProfile({ xAxisMode: 'zero', cursorSeries: Object.freeze([{ key: 'displayValue', label: '정책 스트레스' }]) });
-  const state = { rows: [], selectedYears: PROFILE.defaultYears };
-  const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => sourceMax === sourceMin
-    ? (targetMin + targetMax) / 2
-    : targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
+
+  const PROFILE = chartUtils.chartProfile({
+    xAxisMode: 'zero',
+    cursorSeries: Object.freeze([{ key: 'displayValue', label: '정책 스트레스' }]),
+  });
+
+  const state = {
+    rows: [],
+    selectedYears: PROFILE.defaultYears,
+  };
+
+  const scale = (value, sourceMin, sourceMax, targetMin, targetMax) => {
+    if (sourceMax === sourceMin) {
+      return (targetMin + targetMax) / 2;
+    }
+    return targetMin + ((value - sourceMin) / (sourceMax - sourceMin)) * (targetMax - targetMin);
+  };
 
   function withDisplayValues(rows) {
-    if (POLICY_CHART_MODE === 'legacy') return rows.map((row) => ({ ...row, display_value: Number(row.policy_index) }));
-    let previousValue = 0, previousDate = null;
+    if (POLICY_CHART_MODE === 'legacy') {
+      return rows.map((row) => ({ ...row, display_value: Number(row.policy_index) }));
+    }
+    let previousValue = 0;
+    let previousDate = null;
     return rows.map((row) => {
       const currentDate = Date.parse(`${row.meeting_date}T00:00:00Z`);
       const elapsedDays = previousDate === null ? 0 : Math.max(0, (currentDate - previousDate) / (24 * 60 * 60 * 1000));
       const retainedValue = previousDate === null ? 0 : previousValue * (OSCILLATOR_RETENTION ** (elapsedDays / STANDARD_MEETING_DAYS));
       const displayValue = retainedValue + (Number(row.final_event_score) || 0);
-      previousValue = displayValue; previousDate = currentDate;
+      previousValue = displayValue;
+      previousDate = currentDate;
       return { ...row, display_value: displayValue };
     });
   }
@@ -40,52 +57,101 @@
     // 1·2년 버튼은 한 화면의 시간 폭만 정한다. FOMC는 2000년 이후
     // 전체 이력을 왼쪽으로 탐색할 수 있어야 하므로 여기서 자르지 않는다.
     const datedRows = rows.map((row) => ({
-      ...row, timestamp: Date.parse(`${row.meeting_date}T00:00:00Z`), value: Number(row.display_value),
+      ...row,
+      timestamp: Date.parse(`${row.meeting_date}T00:00:00Z`),
+      value: Number(row.display_value),
     })).filter((row) => Number.isFinite(row.timestamp) && Number.isFinite(row.value));
+
     if (!datedRows.length) {
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">FOMC 정책 점수 데이터가 아직 없습니다.</div>';
       return;
     }
+
     const firstTimestamp = datedRows[0].timestamp;
     const lastTimestamp = datedRows[datedRows.length - 1].timestamp;
     const viewportWidth = Math.max(MIN_VIEWPORT_WIDTH, (container.clientWidth || MIN_VIEWPORT_WIDTH) - Y_AXIS_WIDTH);
     const timelineWidth = chartUtils.timelineWidth(viewportWidth, firstTimestamp, lastTimestamp, selectedYears);
+
+    const actionMap = {
+      hike: '인상',
+      cut: '인하',
+      hold: '동결',
+    };
+
     const points = datedRows.map((row) => ({
-      x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right), value: row.value,
+      x: scale(row.timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right),
+      value: row.value,
       period: `${String(row.meeting_date).slice(0, 4)}년 ${String(row.meeting_date).slice(5, 7)}월`,
       meetingDate: row.meeting_date,
-      action: ({ hike: '인상', cut: '인하', hold: '동결' })[row.action] || row.action,
+      action: actionMap[row.action] || row.action,
       changeBps: row.change_bps == null ? null : Math.abs(Number(row.change_bps)),
       eventScore: Number(row.final_event_score) || 0,
     }));
+
     const initialScale = visibleVerticalScale(points);
-    const pathFor = ({ yMin, yMax }) => window.MacroWatchAnalysisChart.monotonePath(points.map((point) => ({
-      x: point.x,
-      y: scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top),
-    })));
-    const circlesFor = ({ yMin, yMax }) => points.map((point) => `<circle cx="${point.x}" cy="${scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top)}" r="4" class="policy-chart-point" data-policy-meeting-date="${point.meetingDate}"/>`).join('');
+
+    const pathFor = ({ yMin, yMax }) => {
+      return window.MacroWatchAnalysisChart.monotonePath(points.map((point) => ({
+        x: point.x,
+        y: scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top),
+      })));
+    };
+
+    const circlesFor = ({ yMin, yMax }) => {
+      return points.map((point) => {
+        const cy = scale(point.value, yMin, yMax, HEIGHT - PADDING.bottom, PADDING.top);
+        return `<circle cx="${point.x}" cy="${cy}" r="4" class="policy-chart-point" data-policy-meeting-date="${point.meetingDate}"/>`;
+      }).join('');
+    };
+
     const firstYear = new Date(firstTimestamp).getUTCFullYear();
     const lastYear = new Date(lastTimestamp).getUTCFullYear();
+
     const yearTicks = Array.from({ length: lastYear - firstYear + 1 }, (_, index) => {
       const year = firstYear + index;
       const timestamp = Date.UTC(year, 0, 1);
-      if (timestamp < firstTimestamp || timestamp > lastTimestamp) return '';
+      if (timestamp < firstTimestamp || timestamp > lastTimestamp) {
+        return '';
+      }
       const x = scale(timestamp, firstTimestamp, lastTimestamp, PADDING.left, timelineWidth - PADDING.right);
       const label = selectedYears === 'max' ? String(year).slice(-2) : String(year);
       return `<line x1="${x}" y1="${PADDING.top}" x2="${x}" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-chart-year">${label}</text>`;
     }).join('');
+
     const tickSlots = initialScale.tickValues.map((_, index) => index);
     const gridLines = tickSlots.map((slot) => {
       const value = initialScale.tickValues[slot];
       const y = scale(value, initialScale.yMin, initialScale.yMax, HEIGHT - PADDING.bottom, PADDING.top);
-      return `<line data-policy-y-grid="${slot}" x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-chart-y-grid${Math.abs(value) < 1e-9 ? ' analysis-chart-zero-line' : ''}"/>`;
+      const zeroClass = Math.abs(value) < 1e-9 ? ' analysis-chart-zero-line' : '';
+      return `<line data-policy-y-grid="${slot}" x1="${PADDING.left}" y1="${y}" x2="${timelineWidth - PADDING.right}" y2="${y}" class="policy-chart-y-grid${zeroClass}"/>`;
     }).join('');
+
     const axisLabels = tickSlots.map((slot) => {
       const value = initialScale.tickValues[slot];
       const y = scale(value, initialScale.yMin, initialScale.yMax, HEIGHT - PADDING.bottom, PADDING.top);
       return `<line data-policy-y-tick="${slot}" x1="${Y_AXIS_WIDTH - 5}" y1="${y}" x2="${Y_AXIS_WIDTH}" y2="${y}" class="policy-chart-y-tick"/><text data-policy-y-multiple="${slot}" x="${Y_AXIS_WIDTH - 9}" y="${y + 3}" text-anchor="end" class="policy-chart-y-label">${chartUtils.formatAxisNumber(value)}</text>`;
     }).join('');
-    const { frame, svg } = chartUtils.mountChartFrame({ container: container, profile: PROFILE, height: HEIGHT, axisViewWidth: Y_AXIS_WIDTH, leftAxisMarkup: axisLabels, ariaLabel: `FOMC 정책 스트레스 지수`, plotMarkup: `<svg class="policy-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="FOMC 정책 스트레스 지수"><g>${yearTicks}</g><g>${gridLines}</g><path d="${pathFor(initialScale)}" class="policy-chart-line"/><g data-policy-points>${circlesFor(initialScale)}</g><line data-policy-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-cursor"/><text data-policy-cursor-action text-anchor="middle" y="${PADDING.top + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-policy-cursor-period text-anchor="middle" y="${HEIGHT - PADDING.bottom + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-date" visibility="hidden"></text></svg>` });
+
+    const { frame, svg } = chartUtils.mountChartFrame({
+      container,
+      profile: PROFILE,
+      height: HEIGHT,
+      axisViewWidth: Y_AXIS_WIDTH,
+      leftAxisMarkup: axisLabels,
+      ariaLabel: 'FOMC 정책 스트레스 지수',
+      plotMarkup: `
+        <svg class="policy-chart-svg" style="width:${timelineWidth}px" viewBox="0 0 ${timelineWidth} ${HEIGHT}" role="img" aria-label="FOMC 정책 스트레스 지수">
+          <g>${yearTicks}</g>
+          <g>${gridLines}</g>
+          <path d="${pathFor(initialScale)}" class="policy-chart-line"/>
+          <g data-policy-points>${circlesFor(initialScale)}</g>
+          <line data-policy-cursor x1="0" y1="${PADDING.top}" x2="0" y2="${HEIGHT - PADDING.bottom}" class="policy-chart-cursor"/>
+          <text data-policy-cursor-action text-anchor="middle" y="${PADDING.top + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text>
+          <text data-policy-cursor-period text-anchor="middle" y="${HEIGHT - PADDING.bottom + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-date" visibility="hidden"></text>
+        </svg>
+      `.trim(),
+    });
+
     const line = container.querySelector('.policy-chart-line');
     const pointGroup = container.querySelector('[data-policy-points]');
     const yLabels = [...container.querySelectorAll('[data-policy-y-multiple]')];
@@ -96,19 +162,26 @@
     const adminLink = document.getElementById('admin-page-link');
     let selectedPoint = null;
     let scaleFrame = null;
+
     const updateVisibleScale = () => {
       scaleFrame = null;
       const visibleStart = frame.scrollLeft;
       const visibleEnd = visibleStart + frame.clientWidth;
       const visiblePoints = points.filter((point) => point.x >= visibleStart && point.x <= visibleEnd);
-      if (!visiblePoints.length) return;
+      if (!visiblePoints.length) {
+        return;
+      }
       const currentScale = visibleVerticalScale(visiblePoints);
       line.setAttribute('d', pathFor(currentScale));
       pointGroup.innerHTML = circlesFor(currentScale);
+
       yLabels.forEach((label) => {
         const slot = Number(label.dataset.policyYMultiple);
         const value = currentScale.tickValues[slot];
-        if (!Number.isFinite(value)) { label.setAttribute('visibility', 'hidden'); return; }
+        if (!Number.isFinite(value)) {
+          label.setAttribute('visibility', 'hidden');
+          return;
+        }
         label.removeAttribute('visibility');
         const y = scale(value, currentScale.yMin, currentScale.yMax, HEIGHT - PADDING.bottom, PADDING.top);
         label.textContent = chartUtils.formatAxisNumber(value, { showPlus: POLICY_CHART_MODE === 'oscillator' });
@@ -116,9 +189,13 @@
         container.querySelector(`[data-policy-y-tick="${slot}"]`)?.setAttribute('y1', y);
         container.querySelector(`[data-policy-y-tick="${slot}"]`)?.setAttribute('y2', y);
       });
+
       yGridLines.forEach((gridLine) => {
         const value = currentScale.tickValues[Number(gridLine.dataset.policyYGrid)];
-        if (!Number.isFinite(value)) { gridLine.setAttribute('visibility', 'hidden'); return; }
+        if (!Number.isFinite(value)) {
+          gridLine.setAttribute('visibility', 'hidden');
+          return;
+        }
         gridLine.removeAttribute('visibility');
         const y = scale(value, currentScale.yMin, currentScale.yMax, HEIGHT - PADDING.bottom, PADDING.top);
         gridLine.setAttribute('y1', y);
@@ -126,43 +203,66 @@
         gridLine.classList.toggle('analysis-chart-zero-line', Math.abs(value) < 1e-9);
       });
     };
+
     frame.addEventListener('scroll', () => {
-      if (scaleFrame === null) scaleFrame = window.requestAnimationFrame(updateVisibleScale);
+      if (scaleFrame === null) {
+        scaleFrame = window.requestAnimationFrame(updateVisibleScale);
+      }
     }, { passive: true });
+
     chartUtils.scrollToLatest(frame);
     window.requestAnimationFrame(updateVisibleScale);
+
     frame.addEventListener('pointermove', (event) => {
       const bounds = svg.getBoundingClientRect();
       const pointerX = ((event.clientX - bounds.left) / bounds.width) * timelineWidth;
-      const nearest = points.reduce((closest, point) => Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest);
+      const nearest = points.reduce((closest, point) => {
+        return Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest;
+      });
       selectedPoint = nearest;
-      cursor.setAttribute('x1', nearest.x); cursor.setAttribute('x2', nearest.x);
+      cursor.setAttribute('x1', nearest.x);
+      cursor.setAttribute('x2', nearest.x);
       cursorPeriod.textContent = nearest.period;
+
       const policyValue = chartUtils.cursorValueText(
         { displayValue: nearest.value },
         [{ key: 'displayValue', label: '정책 스트레스', format: (value) => chartUtils.formatChartNumber(value, { showPlus: true }) }],
       );
-      cursorAction.textContent = `${policyValue}${nearest.action ? ` · ${nearest.action}${Number.isFinite(nearest.changeBps) ? ` ${chartUtils.formatChartNumber(nearest.changeBps)}bp` : ''}` : ''}`;
+      const actionText = nearest.action
+        ? ` · ${nearest.action}${Number.isFinite(nearest.changeBps) ? ` ${chartUtils.formatChartNumber(nearest.changeBps)}bp` : ''}`
+        : '';
+      cursorAction.textContent = `${policyValue}${actionText}`;
+
       cursorPeriod.setAttribute('visibility', 'visible');
       cursorAction.setAttribute('visibility', 'visible');
       chartUtils.positionCursorText(cursorPeriod, nearest.x, frame);
       chartUtils.positionCursorText(cursorAction, nearest.x, frame);
       cursor.classList.add('is-visible');
     });
+
     frame.addEventListener('pointerleave', () => {
       selectedPoint = null;
       cursor.classList.remove('is-visible');
       cursorPeriod.setAttribute('visibility', 'hidden');
       cursorAction.setAttribute('visibility', 'hidden');
     });
+
     svg.addEventListener('click', (event) => {
       const pointNode = event.target.closest?.('[data-policy-meeting-date]');
-      if (!pointNode || !adminLink || adminLink.hidden) return;
+      if (!pointNode || !adminLink || adminLink.hidden) {
+        return;
+      }
       const meetingDate = pointNode.dataset.policyMeetingDate;
-      if (!meetingDate) return;
+      if (!meetingDate) {
+        return;
+      }
       const storageKey = 'macrowatch_policy_review_dates';
       let dates = [];
-      try { dates = JSON.parse(window.localStorage.getItem(storageKey) || '[]'); } catch (_) { dates = []; }
+      try {
+        dates = JSON.parse(window.localStorage.getItem(storageKey) || '[]');
+      } catch (_) {
+        dates = [];
+      }
       dates = [...new Set([...(Array.isArray(dates) ? dates : []), meetingDate])];
       window.localStorage.setItem(storageKey, JSON.stringify(dates));
       window.MacroWatchDashboard?.showNotice('FOMC 수정 목록 등록', `${meetingDate} 회의를 관리자 수정 목록에 추가했습니다.`);
@@ -170,28 +270,48 @@
   }
 
   window.addEventListener('macrowatch:dashboard-view-changed', ({ detail }) => {
-    if (detail?.view !== 'policy') return;
+    if (detail?.view !== 'policy') {
+      return;
+    }
     chartUtils.scrollToLatest(document.querySelector('#policy-signal-chart [data-history-scroll]'));
   });
 
   async function load({ supabaseClient }) {
     const container = document.getElementById('policy-signal-chart');
-    if (!container || !supabaseClient) return;
-    const { data, error } = await supabaseClient.from('central_bank_policy_events').select('meeting_date,action,change_bps,policy_index,final_event_score').eq('central_bank', 'fed').eq('analysis_status', 'completed').not('policy_index', 'is', null).order('meeting_date');
+    if (!container || !supabaseClient) {
+      return;
+    }
+
+    const { data, error } = await supabaseClient
+      .from('central_bank_policy_events')
+      .select('meeting_date,action,change_bps,policy_index,final_event_score')
+      .eq('central_bank', 'fed')
+      .eq('analysis_status', 'completed')
+      .not('policy_index', 'is', null)
+      .order('meeting_date');
+
     if (error) {
       container.innerHTML = '<div class="analysis-empty-state-light flex min-h-64 items-center justify-center border border-dashed p-5 text-sm text-slate-500">정책 점수를 불러오지 못했습니다.</div>';
       return;
     }
+
     state.rows = withDisplayValues(data || []);
     render(container, state.rows, state.selectedYears);
+
     const controls = document.querySelector('[data-policy-chart-ranges]');
     if (controls && controls.dataset.bound !== 'true') {
       controls.dataset.bound = 'true';
       controls.addEventListener('click', (event) => {
         const button = event.target.closest('[data-policy-chart-range]');
-        if (!button) return;
-        state.selectedYears = button.dataset.policyChartRange === 'max' ? 'max' : Number(button.dataset.policyChartRange);
-        controls.querySelectorAll('[data-policy-chart-range]').forEach((item) => item.classList.toggle('is-active', item === button));
+        if (!button) {
+          return;
+        }
+        state.selectedYears = button.dataset.policyChartRange === 'max'
+          ? 'max'
+          : Number(button.dataset.policyChartRange);
+        controls.querySelectorAll('[data-policy-chart-range]').forEach((item) => {
+          item.classList.toggle('is-active', item === button);
+        });
         render(container, state.rows, state.selectedYears);
       });
     }

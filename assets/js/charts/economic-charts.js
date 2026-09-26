@@ -1,90 +1,1175 @@
 (() => {
-'use strict';
-const cfg=window.MACROWATCH_CONFIG||{};
-const supabaseClient=window.supabase?.createClient(cfg.supabaseUrl,cfg.supabasePublishableKey);
-const C={raw:'#111827',compare:'#d97706',fast:'#2563eb',slow:'#7c3aed',compareFast:'#f59e0b',compareSlow:'#92400e',grid:'#e5e7eb',text:'#6b7280',cross:'#9ca3af',line:'#dc2626',selected:'#7c3aed'};
-const RIGHT_GAP_PX=18,DEFAULT_VISIBLE_BARS=300,MIN_VISIBLE_BARS=12,MIN_BAR_SPACING=.01,MIN_DATA_SCREEN_RATIO=.5;
-const DEFAULT_PREFERENCES={series_order:{},hidden_series:[],horizontal_lines:{}};
-const registry=window.MacroWatchEconomicSeriesRegistry;
-if(!registry)throw new Error('경제지표 메타데이터를 불러오지 못했습니다.');
-const {rate:RATE_CATEGORY,financialCredit:FINANCIAL_CREDIT_CATEGORY,businessDistress:BUSINESS_DISTRESS_CATEGORY,legacyRate:LEGACY_RATE_CATEGORY,legacyBusinessCredit:LEGACY_BUSINESS_CREDIT_CATEGORY}=registry.categories;
-const FREQUENCY_LABELS=registry.frequencyLabels,DEFAULT_CATEGORY_ORDER=registry.defaultCategoryOrder,SERIES=registry.series;
-const MA_WINDOWS={D:[5,20,'5일','20일'],W:[4,26,'4주','26주'],T:[6,18,'6구간','18구간'],M:[6,24,'6개월','24개월'],Q:[4,8,'4분기','8분기'],E:[1,1,'','']};
-let user=null,isAdmin=false,categoryOrder=[...DEFAULT_CATEGORY_ORDER],categoryDrag=null,meta=null,rows=[],chart=null,raw=null,compare=null,fast=null,slow=null,compareFast=null,compareSlow=null,resizeObserver=null,lineMode=false,lineCounter=0,lines=[],selected=null,alerts=[],changingRange=false,dragState=null,preferences=structuredClone(DEFAULT_PREFERENCES),preferenceSaveChain=Promise.resolve(),tickMode='month',monthTickDates=new Set(),initialRangePending=false,initialRangeFrame=0,bellPositionFrame=0;
-const maVisibility=new Map();
-const $=id=>document.getElementById(id);
-const freq=f=>FREQUENCY_LABELS[f]||f;
-const displayDecimals=m=>Math.min(2,Math.max(0,Number(m?.decimals)||0));
-const fmt=(v,m=meta)=>!m||!Number.isFinite(Number(v))?'—':`${window.MacroWatchFrontend.formatDisplayNumber(v,{maximumFractionDigits:displayDecimals(m)})}${m.unit?` ${m.unit}`:''}`;
-function ma(data,n,key='value'){const out=[],q=[];let sum=0;for(const row of data){const value=Number(row[key]);if(!Number.isFinite(value))continue;q.push(value);sum+=value;if(q.length>n)sum-=q.shift();if(q.length===n)out.push({time:row.time,value:sum/n});}return out;}
-const queryAll=(table,select,dateKey,filters=[])=>window.MacroWatchFrontend.queryAll(supabaseClient,table,select,dateKey,filters);
-const normalize=(data,dk,vk)=>data.filter(r=>r?.[dk]!=null&&r?.[vk]!=null&&String(r[vk]).trim()!=='').map(r=>({time:String(r[dk]).slice(0,10),value:Number(r[vk])})).filter(r=>r.time.length===10&&Number.isFinite(r.value));
-async function fetchSeries(m){const primary=await queryAll('economic_chart_series_points','observation_date,value','observation_date',[['series_code',m.code]]);let primaryRows=normalize(primary,'observation_date','value');if(m.fallback){const [t,s,d,v]=m.fallback;const fallbackRows=normalize(await queryAll(t,s,d),d,v);primaryRows=[...new Map([...fallbackRows,...primaryRows].map(row=>[row.time,row])).values()].sort((a,b)=>a.time.localeCompare(b.time));}if(!m.compareCode)return primaryRows;const secondary=normalize(await queryAll('economic_chart_series_points','observation_date,value','observation_date',[['series_code',m.compareCode]]),'observation_date','value');const merged=new Map();primaryRows.forEach(row=>merged.set(row.time,{time:row.time,value:row.value}));secondary.forEach(row=>merged.set(row.time,{...(merged.get(row.time)||{time:row.time}),compareValue:row.value}));return[...merged.values()].sort((a,b)=>a.time.localeCompare(b.time));}
-function dateParts(time){if(typeof time==='string'){const [year,month,day]=time.split('-').map(Number);return{year,month,day};}if(time&&typeof time==='object'&&'year'in time)return{year:Number(time.year),month:Number(time.month),day:Number(time.day)};if(Number.isFinite(Number(time))){const d=new Date(Number(time)*1000);return{year:d.getUTCFullYear(),month:d.getUTCMonth()+1,day:d.getUTCDate()};}return null;}
-function timeKey(time){const p=dateParts(time);return p?`${p.year}-${String(p.month).padStart(2,'0')}-${String(p.day).padStart(2,'0')}`:'';}
-function rebuildMonthTickDates(data){monthTickDates=new Set();const seen=new Set();for(const row of data){const p=dateParts(row.time);if(!p)continue;const month=`${p.year}-${String(p.month).padStart(2,'0')}`;if(seen.has(month))continue;seen.add(month);monthTickDates.add(timeKey(row.time));}}
-function koTick(time,tickMarkType){const p=dateParts(time);if(!p)return'';if(tickMode==='year')return tickMarkType===0?`${p.year}년`:'';if(tickMode==='detail'){if(tickMarkType===0)return`${p.year}년`;if(tickMarkType===1)return`${p.month}월`;return`${p.month}.${p.day}`;}if(!monthTickDates.has(timeKey(time)))return'';return p.month===1?`${p.year}년`:`${p.month}월`;}
-function setTickMode(mode){if(tickMode===mode)return;tickMode=mode;chart?.timeScale().applyOptions({tickMarkFormatter:koTick});}
-function updateTickMode(range){if(!range||!rows.length)return;const from=Math.max(0,Math.min(rows.length-1,Math.floor(range.from)));const to=Math.max(0,Math.min(rows.length-1,Math.ceil(range.to)));const a=new Date(`${rows[from].time}T00:00:00Z`),b=new Date(`${rows[to].time}T00:00:00Z`);const span=Math.max(0,(b-a)/86400000);setTickMode(span>1460?'year':span<120?'detail':'month');}
-function options(){return{layout:{background:{color:'#fff'},textColor:C.text,fontFamily:'Pretendard, system-ui, sans-serif',fontSize:11,attributionLogo:false},localization:{locale:'ko-KR',dateFormat:'yyyy. MM. dd.'},grid:{vertLines:{color:C.grid},horzLines:{color:C.grid}},rightPriceScale:{borderColor:'#d1d5db',scaleMargins:{top:.10,bottom:.10},minimumWidth:92},timeScale:{borderColor:'#d1d5db',timeVisible:false,secondsVisible:false,rightOffset:0,barSpacing:7,minBarSpacing:MIN_BAR_SPACING,fixRightEdge:false,tickMarkFormatter:koTick},crosshair:{mode:window.LightweightCharts.CrosshairMode.Normal,vertLine:{color:C.cross,width:1,style:2},horzLine:{color:C.cross,width:1,style:2}},handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},handleScale:{axisPressedMouseMove:false,mouseWheel:false,pinch:true},kineticScroll:{mouse:true,touch:true}};}
-function normalizeSeriesOrder(value){const order=value&&typeof value==='object'&&!Array.isArray(value)?structuredClone(value):{};if(Array.isArray(order[LEGACY_RATE_CATEGORY])){const legacy=order[LEGACY_RATE_CATEGORY];if(!Array.isArray(order[RATE_CATEGORY]))order[RATE_CATEGORY]=legacy.filter(code=>SERIES.some(item=>item.code===code&&item.category===RATE_CATEGORY));if(!Array.isArray(order[FINANCIAL_CREDIT_CATEGORY]))order[FINANCIAL_CREDIT_CATEGORY]=legacy.filter(code=>SERIES.some(item=>item.code===code&&item.category===FINANCIAL_CREDIT_CATEGORY));delete order[LEGACY_RATE_CATEGORY];}if(Array.isArray(order[LEGACY_BUSINESS_CREDIT_CATEGORY])){if(!Array.isArray(order[BUSINESS_DISTRESS_CATEGORY]))order[BUSINESS_DISTRESS_CATEGORY]=order[LEGACY_BUSINESS_CREDIT_CATEGORY];delete order[LEGACY_BUSINESS_CREDIT_CATEGORY];}return order;}
-function normalizeCategoryOrder(value){const stored=Array.isArray(value)?value.filter(name=>typeof name==='string'):[];const expanded=stored.flatMap(name=>name===LEGACY_RATE_CATEGORY?[RATE_CATEGORY,FINANCIAL_CREDIT_CATEGORY]:[name===LEGACY_BUSINESS_CREDIT_CATEGORY?BUSINESS_DISTRESS_CATEGORY:name]);return[...new Set([...expanded.filter(name=>DEFAULT_CATEGORY_ORDER.includes(name)),...DEFAULT_CATEGORY_ORDER])];}
-function normalizePreferences(row){const order=normalizeSeriesOrder(row?.series_order);const hidden=Array.isArray(row?.hidden_series)?row.hidden_series.filter(code=>typeof code==='string'):[];const horizontal=row?.horizontal_lines&&typeof row.horizontal_lines==='object'&&!Array.isArray(row.horizontal_lines)?row.horizontal_lines:{};return{series_order:order,hidden_series:hidden,horizontal_lines:horizontal};}
-async function loadPreferences(){const {data,error}=await supabaseClient.from('economic_chart_preferences').select('series_order,hidden_series,horizontal_lines').eq('user_id',user.id).maybeSingle();if(error){console.warn('economic chart preferences load failed',error);preferences=structuredClone(DEFAULT_PREFERENCES);return;}preferences=normalizePreferences(data);}
-async function loadCatalogSettings(){const [{data:account,error:accountError},{data:settings,error:settingsError}]=await Promise.all([supabaseClient.from('user_accounts').select('is_admin').eq('user_id',user.id).maybeSingle(),supabaseClient.from('economic_chart_catalog_settings').select('category_order').eq('id',true).maybeSingle()]);if(accountError)console.warn('economic chart admin role load failed',accountError);isAdmin=!accountError&&account?.is_admin===true;if(settingsError)console.warn('economic chart category order load failed',settingsError);categoryOrder=normalizeCategoryOrder(settingsError?[]:settings?.category_order);}
-async function persistCategoryOrder(){if(!isAdmin)return;const payload={id:true,category_order:[...categoryOrder],updated_at:new Date().toISOString(),updated_by:user.id};const{error}=await supabaseClient.from('economic_chart_catalog_settings').upsert(payload,{onConflict:'id'});if(error)throw error;}
-function persistPreferences(){if(!user)return Promise.resolve();const payload={user_id:user.id,series_order:structuredClone(preferences.series_order),hidden_series:[...(preferences.hidden_series||[])],horizontal_lines:structuredClone(preferences.horizontal_lines||{}),updated_at:new Date().toISOString()};preferenceSaveChain=preferenceSaveChain.catch(()=>{}).then(async()=>{const {error}=await supabaseClient.from('economic_chart_preferences').upsert(payload,{onConflict:'user_id'});if(error)throw error;});return preferenceSaveChain;}
-function preferenceError(error){console.error(error);$('economic-note').textContent=`개인 설정 저장 오류: ${error?.message||'알 수 없는 오류'}`;}
-function savedOrder(){return preferences.series_order||{};}
-function saveOrder(category,codes){preferences.series_order={...savedOrder(),[category]:codes};persistPreferences().catch(preferenceError);}
-function hiddenCodes(){return new Set(preferences.hidden_series||[]);}
-function saveHidden(set){preferences.hidden_series=[...set];persistPreferences().catch(preferenceError);}
-function savedPlainLines(code){const values=preferences.horizontal_lines?.[code];return Array.isArray(values)?values.map(Number).filter(Number.isFinite):[];}
-function savePlainLinesFromChart(){if(!meta)return;preferences.horizontal_lines={...(preferences.horizontal_lines||{}),[meta.code]:lines.filter(l=>!l.target).map(l=>l.price)};persistPreferences().catch(preferenceError);}
-const visibleSeries=()=>{const hidden=hiddenCodes();return SERIES.filter(m=>!hidden.has(m.code));};
-function orderedGroups(){const state=savedOrder(),groups=new Map();for(const m of visibleSeries()){if(!groups.has(m.category))groups.set(m.category,[]);groups.get(m.category).push(m);}for(const [category,items] of groups){const rank=new Map((state[category]||[]).map((code,i)=>[code,i]));items.sort((a,b)=>(rank.get(a.code)??9999)-(rank.get(b.code)??9999));}const rank=new Map(categoryOrder.map((name,index)=>[name,index]));return new Map([...groups].sort(([a],[b])=>(rank.get(a)??9999)-(rank.get(b)??9999)));}
-function firstVisibleSeries(){for(const items of orderedGroups().values())if(items.length)return items[0];return null;}
-function hideSeries(m){const hidden=hiddenCodes();hidden.add(m.code);saveHidden(hidden);renderList();if(meta?.code===m.code){const next=firstVisibleSeries();if(next)selectSeries(next);else{meta=null;resetChart();$('economic-chart-title').textContent='—';$('economic-chart-meta').textContent='—';$('economic-status').textContent='표시할 지표 없음';}}else activeButton(meta?.code);}
-function restoreSeries(){preferences.hidden_series=[];persistPreferences().catch(preferenceError);renderList();activeButton(meta?.code);}
-function moveCategory(source,target){const order=[...categoryOrder],from=order.indexOf(source),to=order.indexOf(target);if(from<0||to<0||from===to)return;order.splice(to,0,order.splice(from,1)[0]);categoryOrder=order;persistCategoryOrder().catch(preferenceError);renderList();activeButton(meta?.code);}
-function renderList(){const root=$('economic-series-list');root.replaceChildren();for(const [name,items] of orderedGroups()){const g=document.createElement('div');g.className='economic-series-group';g.dataset.category=name;g.innerHTML=`<div class="economic-series-group-title">${name}<small>${isAdmin?'제목을 드래그해 이동':'드래그로 순서 변경'}</small></div>`;const title=g.querySelector('.economic-series-group-title');if(isAdmin){title.draggable=true;title.classList.add('is-admin-draggable');title.addEventListener('dragstart',e=>{categoryDrag=name;title.classList.add('is-dragging');e.dataTransfer.effectAllowed='move';});title.addEventListener('dragend',()=>{categoryDrag=null;title.classList.remove('is-dragging');document.querySelectorAll('.economic-series-group-title.is-drop-target').forEach(node=>node.classList.remove('is-drop-target'));});title.addEventListener('dragover',e=>{if(!categoryDrag||categoryDrag===name)return;e.preventDefault();title.classList.add('is-drop-target');});title.addEventListener('dragleave',()=>title.classList.remove('is-drop-target'));title.addEventListener('drop',e=>{if(!categoryDrag)return;e.preventDefault();moveCategory(categoryDrag,name);categoryDrag=null;});}for(const m of items){const row=document.createElement('div');row.className='economic-series-row';row.draggable=true;row.dataset.seriesCode=m.code;row.dataset.category=name;const b=document.createElement('button');b.type='button';b.className='economic-series-button';b.dataset.seriesCode=m.code;b.innerHTML=`<span class="economic-drag-handle" aria-hidden="true">⋮⋮</span><span>${m.title}<small>${m.frequencyLabel||freq(m.frequency)} · ${m.unit}</small></span>`;b.onclick=()=>selectSeries(m);const remove=document.createElement('button');remove.type='button';remove.className='economic-series-remove';remove.title='목록에서 삭제';remove.setAttribute('aria-label',`${m.title} 목록에서 삭제`);remove.textContent='×';remove.onclick=e=>{e.stopPropagation();hideSeries(m);};row.addEventListener('dragstart',e=>{dragState={code:m.code,category:name};row.classList.add('is-dragging');e.dataTransfer.effectAllowed='move';});row.addEventListener('dragend',()=>{dragState=null;row.classList.remove('is-dragging');document.querySelectorAll('.economic-series-row.is-drop-target').forEach(x=>x.classList.remove('is-drop-target'));});row.addEventListener('dragover',e=>{if(!dragState||dragState.category!==name||dragState.code===m.code)return;e.preventDefault();row.classList.add('is-drop-target');});row.addEventListener('dragleave',()=>row.classList.remove('is-drop-target'));row.addEventListener('drop',e=>{if(!dragState||dragState.category!==name)return;e.preventDefault();row.classList.remove('is-drop-target');const codes=[...g.querySelectorAll('.economic-series-row')].map(x=>x.dataset.seriesCode);const from=codes.indexOf(dragState.code),to=codes.indexOf(m.code);if(from<0||to<0||from===to)return;codes.splice(to,0,codes.splice(from,1)[0]);saveOrder(name,codes);renderList();activeButton(meta?.code);});row.append(b,remove);g.append(row);}root.append(g);}const hiddenCount=hiddenCodes().size;if(hiddenCount){const restore=document.createElement('button');restore.type='button';restore.className='economic-series-restore';restore.textContent=`삭제한 지표 복원 (${hiddenCount})`;restore.onclick=restoreSeries;root.append(restore);}}
-function activeButton(code){document.querySelectorAll('.economic-series-button').forEach(b=>b.classList.toggle('is-active',b.dataset.seriesCode===code));}
-function hideCrosshairValue(){const label=$('economic-crosshair-value');if(label)label.hidden=true;}
-function showCrosshairValue(param){const label=$('economic-crosshair-value'),host=$('economic-chart-host'),datum=param?.seriesData?.get(raw),value=typeof datum==='number'?datum:Number(datum?.value);if(!label||!host||!param?.point||!Number.isFinite(value)){hideCrosshairValue();return;}label.textContent=window.MacroWatchFrontend.formatDisplayNumber(value,{maximumFractionDigits:displayDecimals(meta)});label.hidden=false;const half=label.offsetWidth/2,x=Math.max(half+4,Math.min(host.clientWidth-half-4,param.point.x));label.style.left=`${x}px`;}
-function resetChart(){if(initialRangeFrame){cancelAnimationFrame(initialRangeFrame);initialRangeFrame=0;}if(bellPositionFrame){cancelAnimationFrame(bellPositionFrame);bellPositionFrame=0;}if(resizeObserver){resizeObserver.disconnect();resizeObserver=null;}const host=$('economic-chart-host');if(host){host.onwheel=null;host.ondblclick=null;host.onmouseleave=null;}hideCrosshairValue();if(chart){chart.remove();chart=null;}raw=compare=fast=slow=compareFast=compareSlow=null;lines=[];selected=null;lineMode=false;tickMode='month';monthTickDates=new Set();initialRangePending=false;$('economic-line-tool').classList.remove('is-active');$('economic-delete-line').disabled=true;$('economic-alert-layer').replaceChildren();}
-function rightGapBars(){if(!chart)return 0;const spacing=Number(chart.timeScale().options?.().barSpacing)||7;return RIGHT_GAP_PX/Math.max(spacing,.2);}
-const maxRange=()=>rows.length?{from:0,to:rows.length-1+rightGapBars()}:null;
-function fitMax(){const r=maxRange();if(r&&chart){chart.timeScale().setVisibleLogicalRange(r);updateTickMode(r);schedulePlaceBells();}}
-function initialRange(){if(!rows.length)return null;const count=Math.min(DEFAULT_VISIBLE_BARS,rows.length),last=rows.length-1;return{from:last-count+1,to:last+rightGapBars()};}
-function showInitialRange(){const r=initialRange();if(r&&chart){tickMode='month';changingRange=true;chart.timeScale().setVisibleLogicalRange(r);const aligned={from:r.from,to:rows.length-1+rightGapBars()};chart.timeScale().setVisibleLogicalRange(aligned);changingRange=false;chart.timeScale().applyOptions({tickMarkFormatter:koTick});updateTickMode(chart.timeScale().getVisibleLogicalRange()||aligned);schedulePlaceBells();}}
-function scheduleInitialRange(){if(initialRangeFrame)cancelAnimationFrame(initialRangeFrame);initialRangePending=true;initialRangeFrame=requestAnimationFrame(()=>{initialRangeFrame=requestAnimationFrame(()=>{initialRangeFrame=0;if(!chart||!initialRangePending)return;initialRangePending=false;showInitialRange();});});}
-function clampRange(r){if(!r||!chart||!rows.length||changingRange)return;const last=rows.length-1,maxTo=last+rightGapBars(),maxW=maxTo/MIN_DATA_SCREEN_RATIO,w=Math.min(maxW,r.to-r.from);let from=r.from,to=from+w;if(to>maxTo){to=maxTo;from=to-w;}if(from<-to){from=-w/2;to=w/2;}if(Math.abs(from-r.from)>.01||Math.abs(to-r.to)>.01){changingRange=true;chart.timeScale().setVisibleLogicalRange({from,to});changingRange=false;}updateTickMode({from,to});schedulePlaceBells();}
-function wheel(e){if(!chart||!rows.length)return;e.preventDefault();const r=chart.timeScale().getVisibleLogicalRange()||initialRange(),last=rows.length-1,maxTo=last+rightGapBars(),w=Math.max(MIN_VISIBLE_BARS,r.to-r.from),anchor=r.to>=last?maxTo:Math.min(r.to,maxTo),maxW=Math.max(MIN_VISIBLE_BARS,anchor/MIN_DATA_SCREEN_RATIO),nextW=Math.min(maxW,Math.max(MIN_VISIBLE_BARS,w*(e.deltaY>0?1.16:.86))),next={from:anchor-nextW,to:anchor};changingRange=true;chart.timeScale().setVisibleLogicalRange(next);changingRange=false;updateTickMode(next);schedulePlaceBells();}
-const findLine=id=>lines.find(l=>l.id===id);
-const style=l=>({price:l.price,color:l.id===selected?C.selected:C.line,lineWidth:l.id===selected?2:1,lineStyle:2,axisLabelVisible:false,title:''});
-function refreshLines(){lines.forEach(l=>l.obj.applyOptions(style(l)));$('economic-delete-line').disabled=!selected;schedulePlaceBells();}
-function choose(id){selected=id||null;refreshLines();}
-function addLine(price,target=null,persist=true){if(!raw||!Number.isFinite(price))return null;const old=target?lines.find(l=>l.target?.id===target.id):null;if(old)return old;const l={id:`line-${++lineCounter}`,price,target,obj:null};l.obj=raw.createPriceLine(style(l));lines.push(l);schedulePlaceBells();if(persist&&!target)savePlainLinesFromChart();return l;}
-function restorePlainLines(){if(!meta||!raw)return;savedPlainLines(meta.code).forEach(price=>addLine(price,null,false));}
-function deleteLine(){const l=findLine(selected);if(!l||!raw)return;raw.removePriceLine(l.obj);lines=lines.filter(x=>x.id!==l.id);selected=null;savePlainLinesFromChart();refreshLines();}
-function clearLines(){if(!raw)return;lines.forEach(l=>raw.removePriceLine(l.obj));lines=[];selected=null;savePlainLinesFromChart();refreshLines();}
-function nearest(y){let best=null,d=Infinity;for(const l of lines){const py=raw?.priceToCoordinate(l.price);if(py==null)continue;const nd=Math.abs(py-y);if(nd<d){best=l;d=nd;}}return d<=7?best:null;}
-async function loadAlerts(){const {data,error}=await supabaseClient.from('targets').select('id,title,condition_type,target_value,last_value,is_active,source_config').eq('user_id',user.id).eq('source_type','economic_chart').eq('is_active',true);if(error)throw error;alerts=(data||[]).filter(t=>t.source_config?.series_code);}
-const alertsFor=code=>alerts.filter(t=>t.source_config?.series_code===code);
-function syncAlertLines(){if(!meta||!raw)return;alertsFor(meta.code).forEach(t=>addLine(Number(t.target_value),t,false));schedulePlaceBells();}
-const bellSvg='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.35-1.67h-4.7A2.5 2.5 0 0 0 12 22Zm7-5-1.7-2.15V10a5.3 5.3 0 0 0-4.3-5.2V4a1 1 0 1 0-2 0v.8A5.3 5.3 0 0 0 6.7 10v4.85L5 17v1h14v-1Z"/></svg>';
-function placeBells(){const layer=$('economic-alert-layer');if(!layer||!raw)return;layer.replaceChildren();for(const l of lines){const y=raw.priceToCoordinate(l.price);if(y==null||y<0||y>$('economic-chart-host').clientHeight)continue;const box=document.createElement('button');box.type='button';box.className=`economic-alert-marker-box${l.id===selected?' is-selected':''}`;box.style.top=`${y}px`;box.title=l.target?'알림 수정/삭제':'추적 알림 추가';box.setAttribute('aria-label',`${fmt(l.price)} · ${box.title}`);box.innerHTML=`<span class="economic-alert-marker-value">${fmt(l.price)}</span><span class="economic-alert-bell${l.target?' is-active':''}">${bellSvg}</span>`;box.onclick=e=>{e.stopPropagation();choose(l.id);openModal(l);};layer.append(box);}}
-function schedulePlaceBells(){if(bellPositionFrame)cancelAnimationFrame(bellPositionFrame);bellPositionFrame=requestAnimationFrame(()=>{bellPositionFrame=requestAnimationFrame(()=>{bellPositionFrame=0;placeBells();});});}
-function closeModal(){$('economic-alert-modal').hidden=true;$('economic-alert-form').dataset.lineId='';}
-function openModal(l){$('economic-alert-modal').hidden=false;$('economic-alert-form').dataset.lineId=l.id;$('economic-alert-title').textContent=l.target?'추적 알림 수정':'추적 알림 추가';$('economic-alert-series').textContent=meta?.title||'';$('economic-alert-condition').value=l.target?.condition_type||'cross';window.MacroWatchFrontend.setDisplayNumberInput($('economic-alert-value'),l.target?.target_value??l.price,{maximumFractionDigits:displayDecimals(meta)});$('economic-alert-delete').hidden=!l.target;}
-function showAlertError(error){$('economic-note').textContent=`알림 저장 오류: ${error?.message||'알 수 없는 오류'}`;}
-async function saveAlert(e){e.preventDefault();const l=findLine($('economic-alert-form').dataset.lineId);if(!l||!meta||!user)return;const threshold=Number(window.MacroWatchFrontend.readDisplayNumberInput($('economic-alert-value')));if(!Number.isFinite(threshold))return;const condition=$('economic-alert-condition').value,payload={title:`${meta.title} ${condition==='gte'?'상향':condition==='lte'?'하향':'상/하향'} 돌파`,url:'economic-charts.html',css_selector:meta.code,condition_type:condition,target_value:threshold,last_value:rows.at(-1)?.value??null,last_checked_at:new Date().toISOString(),last_error:null,is_active:true,user_id:user.id,source_type:'economic_chart',source_config:{series_code:meta.code,frequency:meta.frequency}};if(l.target){const {data,error}=await supabaseClient.from('targets').update(payload).eq('id',l.target.id).eq('user_id',user.id).select().single();if(error)throw error;l.target=data;alerts=alerts.map(x=>x.id===data.id?data:x);}else{const {data,error}=await supabaseClient.from('targets').insert(payload).select().single();if(error)throw error;l.target=data;alerts.push(data);}l.price=threshold;l.obj.applyOptions({price:threshold});savePlainLinesFromChart();closeModal();refreshLines();}
-async function deleteAlert(){const l=findLine($('economic-alert-form').dataset.lineId);if(!l?.target||!user)return;const id=l.target.id,{error}=await supabaseClient.from('targets').delete().eq('id',id).eq('user_id',user.id);if(error)throw error;alerts=alerts.filter(x=>x.id!==id);l.target=null;savePlainLinesFromChart();closeModal();schedulePlaceBells();}
-function maEnabled(m=meta){if(m?.maAvailable===false)return false;return maVisibility.has(m.code)?maVisibility.get(m.code):!m.compareCode&&m.defaultMa!==false;}
-function setLegend(items){const legend=$('economic-legend');legend.replaceChildren();items.forEach(([label,color])=>{const span=document.createElement('span');span.textContent=label;span.style.setProperty('--legend-color',color);legend.append(span);});}
-function applyMaVisibility(){const visible=!!meta&&maEnabled(meta);[fast,slow,compareFast,compareSlow].forEach(series=>series?.applyOptions({visible}));const button=$('economic-ma-toggle');button.disabled=meta?.maAvailable===false;button.textContent=meta?.maAvailable===false?'이평선 없음':`이평선 ${visible?'ON':'OFF'}`;button.classList.toggle('is-active',visible);if(!meta)return;const [, ,fl,sl]=MA_WINDOWS[meta.frequency],primaryTitle=meta.legendTitle||meta.title;const items=meta.compareCode?[[primaryTitle,C.raw],[meta.compareTitle,C.compare]]:[[primaryTitle,C.raw]];if(visible){items.push([`${primaryTitle} ${fl}`,C.fast],[`${primaryTitle} ${sl}`,C.slow]);if(meta.compareCode)items.push([`${meta.compareTitle} ${fl}`,C.compareFast],[`${meta.compareTitle} ${sl}`,C.compareSlow]);}setLegend(items);}
-function renderChart(m,data){resetChart();rows=data;rebuildMonthTickDates(data);const host=$('economic-chart-host');host.querySelector('.economic-empty')?.remove();if(!data.length){host.insertAdjacentHTML('afterbegin',`<div class="economic-empty">${m.pending||'저장된 데이터가 없습니다.'}</div>`);$('economic-note').textContent=m.pending||'';return;}chart=window.LightweightCharts.createChart(host,{...options(),width:Math.max(1,host.clientWidth),height:Math.max(1,host.clientHeight)});const minMove=1/(10**m.decimals),displayMinMove=1/(10**displayDecimals(m)),pf={type:'custom',minMove:displayMinMove,formatter:value=>window.MacroWatchFrontend.formatDisplayNumber(value,{maximumFractionDigits:displayDecimals(m)})},lineType=m.lineType==='steps'?window.LightweightCharts.LineType.WithSteps:window.LightweightCharts.LineType.Simple;const primaryData=data.filter(row=>Number.isFinite(row.value)).map(({time,value})=>({time,value}));raw=chart.addLineSeries({color:C.raw,lineWidth:2,priceFormat:pf,lineType,lastValueVisible:true,priceLineVisible:true});raw.setData(primaryData);const [fw,sw]=MA_WINDOWS[m.frequency];fast=chart.addLineSeries({color:C.fast,lineWidth:1,priceFormat:pf,lastValueVisible:false,priceLineVisible:false});slow=chart.addLineSeries({color:C.slow,lineWidth:1,priceFormat:pf,lastValueVisible:false,priceLineVisible:false});fast.setData(ma(data,fw));slow.setData(ma(data,sw));if(m.compareCode){const secondaryData=data.filter(row=>Number.isFinite(row.compareValue)).map(row=>({time:row.time,value:row.compareValue}));compare=chart.addLineSeries({color:C.compare,lineWidth:2,priceFormat:pf,lineType,lastValueVisible:true,priceLineVisible:true});compare.setData(secondaryData);compareFast=chart.addLineSeries({color:C.compareFast,lineWidth:1,priceFormat:pf,lastValueVisible:false,priceLineVisible:false});compareSlow=chart.addLineSeries({color:C.compareSlow,lineWidth:1,priceFormat:pf,lastValueVisible:false,priceLineVisible:false});compareFast.setData(ma(data,fw,'compareValue'));compareSlow.setData(ma(data,sw,'compareValue'));}applyMaVisibility();const latest=primaryData.at(-1);$('economic-note').textContent=`최신 ${latest.time} · ${fmt(latest.value,m)} · 기본 최근 ${Math.min(DEFAULT_VISIBLE_BARS,data.length)}개 · 휠 확대/축소 · 드래그 이동 · 더블클릭 기본복귀`;restorePlainLines();syncAlertLines();chart.subscribeClick(p=>{if(!p.point)return;if(lineMode){const price=raw.coordinateToPrice(p.point.y);if(Number.isFinite(price)){const l=addLine(Math.round(price/minMove)*minMove);choose(l?.id);}lineMode=false;$('economic-line-tool').classList.remove('is-active');return;}choose(nearest(p.point.y)?.id);});chart.subscribeCrosshairMove(showCrosshairValue);chart.timeScale().subscribeVisibleLogicalRangeChange(clampRange);host.onwheel=wheel;host.ondblclick=e=>{e.preventDefault();showInitialRange();};host.onmouseleave=hideCrosshairValue;resizeObserver=new ResizeObserver(()=>{if(chart){chart.applyOptions({width:Math.max(1,host.clientWidth),height:Math.max(1,host.clientHeight)});schedulePlaceBells();}});resizeObserver.observe(host);scheduleInitialRange();}
-async function selectSeries(m){meta=m;activeButton(m.code);$('economic-chart-title').textContent=m.title;$('economic-chart-meta').textContent=`${m.frequencyLabel||freq(m.frequency)} · ${m.unit}`;$('economic-status').textContent='불러오는 중';try{const data=await fetchSeries(m);renderChart(m,data);$('economic-status').textContent=data.length?`${data.length.toLocaleString('ko-KR')}개 관측값`:'저장 데이터 없음';}catch(error){resetChart();$('economic-chart-host').insertAdjacentHTML('afterbegin','<div class="economic-empty">데이터를 불러오지 못했습니다.</div>');$('economic-note').textContent=error?.message||'조회 오류';$('economic-status').textContent='조회 오류';}}
-async function initialize(){if(!supabaseClient||!window.LightweightCharts)return;const {data}=await supabaseClient.auth.getSession();if(!data.session){location.replace('index.html');return;}user=data.session.user;await Promise.all([loadPreferences(),loadCatalogSettings()]);renderList();await loadAlerts();$('economic-ma-toggle').onclick=()=>{if(!meta)return;maVisibility.set(meta.code,!maEnabled(meta));applyMaVisibility();};$('economic-line-tool').onclick=()=>{lineMode=!lineMode;$('economic-line-tool').classList.toggle('is-active',lineMode);};$('economic-delete-line').onclick=deleteLine;$('economic-clear-lines').onclick=clearLines;$('economic-fit-max').onclick=fitMax;document.querySelectorAll('[data-close-alert]').forEach(n=>n.onclick=closeModal);$('economic-alert-form').onsubmit=e=>saveAlert(e).catch(showAlertError);$('economic-alert-delete').onclick=()=>deleteAlert().catch(showAlertError);const initial=firstVisibleSeries();if(initial)await selectSeries(initial);}
-document.addEventListener('DOMContentLoaded',initialize);
+  'use strict';
+
+  const cfg = window.MACROWATCH_CONFIG || {};
+  const supabaseClient = window.supabase?.createClient(cfg.supabaseUrl, cfg.supabasePublishableKey);
+
+  const C = {
+    raw: '#111827',
+    compare: '#d97706',
+    fast: '#2563eb',
+    slow: '#7c3aed',
+    compareFast: '#f59e0b',
+    compareSlow: '#92400e',
+    grid: '#e5e7eb',
+    text: '#6b7280',
+    cross: '#9ca3af',
+    line: '#dc2626',
+    selected: '#7c3aed'
+  };
+
+  const RIGHT_GAP_PX=18;
+  const DEFAULT_VISIBLE_BARS=300;
+  const MIN_VISIBLE_BARS = 12;
+  const MIN_BAR_SPACING = 0.01;
+  const MIN_DATA_SCREEN_RATIO = 0.5;
+
+  const DEFAULT_PREFERENCES = {
+    series_order: {},
+    hidden_series: [],
+    horizontal_lines: {}
+  };
+
+  const registry=window.MacroWatchEconomicSeriesRegistry;
+  if (!registry) throw new Error('경제지표 메타데이터를 불러오지 못했습니다.');
+
+  const {
+    rate: RATE_CATEGORY,
+    financialCredit: FINANCIAL_CREDIT_CATEGORY,
+    businessDistress: BUSINESS_DISTRESS_CATEGORY,
+    legacyRate: LEGACY_RATE_CATEGORY,
+    legacyBusinessCredit: LEGACY_BUSINESS_CREDIT_CATEGORY
+  } = registry.categories;
+
+  const FREQUENCY_LABELS = registry.frequencyLabels;
+  const DEFAULT_CATEGORY_ORDER = registry.defaultCategoryOrder;
+  const SERIES = registry.series;
+
+  const MA_WINDOWS = {
+    D: [5, 20, '5일', '20일'],
+    W: [4, 26, '4주', '26주'],
+    T: [6, 18, '6구간', '18구간'],
+    M: [6, 24, '6개월', '24개월'],
+    Q: [4, 8, '4분기', '8분기'],
+    E: [1, 1, '', '']
+  };
+
+  let user = null;
+  let isAdmin = false;
+  let categoryOrder = [...DEFAULT_CATEGORY_ORDER];
+  let categoryDrag = null;
+  let meta = null;
+  let rows = [];
+  let chart = null;
+  let raw = null;
+  let compare = null;
+  let fast = null;
+  let slow = null;
+  let compareFast = null;
+  let compareSlow = null;
+  let resizeObserver = null;
+  let lineMode = false;
+  let lineCounter = 0;
+  let lines = [];
+  let selected = null;
+  let alerts = [];
+  let changingRange = false;
+  let dragState = null;
+  let preferences = structuredClone(DEFAULT_PREFERENCES);
+  let preferenceSaveChain = Promise.resolve();
+  let tickMode = 'month';
+  let monthTickDates = new Set();
+  let initialRangePending = false;
+  let initialRangeFrame = 0;
+  let bellPositionFrame = 0;
+
+  const maVisibility = new Map();
+  const $ = id => document.getElementById(id);
+  const freq = f => FREQUENCY_LABELS[f] || f;
+  const displayDecimals = m => Math.min(2, Math.max(0, Number(m?.decimals) || 0));
+  const fmt = (v, m = meta) => !m || !Number.isFinite(Number(v))
+    ? '—'
+    : `${window.MacroWatchFrontend.formatDisplayNumber(v, { maximumFractionDigits: displayDecimals(m) })}${m.unit ? ` ${m.unit}` : ''}`;
+
+  function ma(data, n, key = 'value') {
+    const out = [];
+    const q = [];
+    let sum = 0;
+    for (const row of data) {
+      const value = Number(row[key]);
+      if (!Number.isFinite(value)) continue;
+      q.push(value);
+      sum += value;
+      if (q.length > n) sum -= q.shift();
+      if (q.length === n) out.push({ time: row.time, value: sum / n });
+    }
+    return out;
+  }
+
+  const queryAll = (table, select, dateKey, filters = []) =>
+    window.MacroWatchFrontend.queryAll(supabaseClient, table, select, dateKey, filters);
+
+  const normalize = (data, dk, vk) =>
+    data
+      .filter(r => r?.[dk]!=null && r?.[vk]!=null && String(r[vk]).trim()!=='')
+      .map(r => ({ time: String(r[dk]).slice(0, 10), value: Number(r[vk]) }))
+      .filter(r => r.time.length === 10 && Number.isFinite(r.value));
+
+  async function fetchSeries(m) {
+    const primary = await queryAll('economic_chart_series_points', 'observation_date,value', 'observation_date', [['series_code', m.code]]);
+    let primaryRows = normalize(primary, 'observation_date', 'value');
+
+    if (m.fallback) {
+      const [t, s, d, v] = m.fallback;
+      const fallbackRows = normalize(await queryAll(t, s, d), d, v);
+      primaryRows = [...new Map([...fallbackRows, ...primaryRows].map(row => [row.time, row])).values()]
+        .sort((a, b) => a.time.localeCompare(b.time));
+    }
+
+    if (!m.compareCode) return primaryRows;
+
+    const secondary = normalize(
+      await queryAll('economic_chart_series_points', 'observation_date,value', 'observation_date', [['series_code', m.compareCode]]),
+      'observation_date',
+      'value'
+    );
+    const merged = new Map();
+    primaryRows.forEach(row => merged.set(row.time, { time: row.time, value: row.value }));
+    secondary.forEach(row => merged.set(row.time, { ...(merged.get(row.time) || { time: row.time }), compareValue: row.value }));
+    return [...merged.values()].sort((a, b) => a.time.localeCompare(b.time));
+  }
+
+  function dateParts(time) {
+    if (typeof time === 'string') {
+      const [year, month, day] = time.split('-').map(Number);
+      return { year, month, day };
+    }
+    if (time && typeof time === 'object' && 'year' in time) {
+      return { year: Number(time.year), month: Number(time.month), day: Number(time.day) };
+    }
+    if (Number.isFinite(Number(time))) {
+      const d = new Date(Number(time) * 1000);
+      return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+    }
+    return null;
+  }
+
+  function timeKey(time) {
+    const p = dateParts(time);
+    return p ? `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}` : '';
+  }
+
+  function rebuildMonthTickDates(data) {
+    monthTickDates = new Set();
+    const seen = new Set();
+    for (const row of data) {
+      const p = dateParts(row.time);
+      if (!p) continue;
+      const month = `${p.year}-${String(p.month).padStart(2, '0')}`;
+      if (seen.has(month)) continue;
+      seen.add(month);
+      monthTickDates.add(timeKey(row.time));
+    }
+  }
+
+  function koTick(time, tickMarkType) {
+    const p = dateParts(time);
+    if (!p) return '';
+    if (tickMode === 'year') return tickMarkType === 0 ? `${p.year}년` : '';
+    if (tickMode === 'detail') {
+      if (tickMarkType === 0) return `${p.year}년`;
+      if (tickMarkType === 1) return `${p.month}월`;
+      return `${p.month}.${p.day}`;
+    }
+    if(!monthTickDates.has(timeKey(time)))return'';
+    return p.month === 1 ? `${p.year}년` : `${p.month}월`;
+  }
+
+  function setTickMode(mode) {
+    if (tickMode === mode) return;
+    tickMode = mode;
+    chart?.timeScale().applyOptions({ tickMarkFormatter: koTick });
+  }
+
+  function updateTickMode(range) {
+    if (!range || !rows.length) return;
+    const from = Math.max(0, Math.min(rows.length - 1, Math.floor(range.from)));
+    const to = Math.max(0, Math.min(rows.length - 1, Math.ceil(range.to)));
+    const a = new Date(`${rows[from].time}T00:00:00Z`);
+    const b = new Date(`${rows[to].time}T00:00:00Z`);
+    const span = Math.max(0, (b - a) / 86400000);
+    setTickMode(span > 1460 ? 'year' : span < 120 ? 'detail' : 'month');
+  }
+
+  function options() {
+    return {
+      layout: {
+        background: { color: '#fff' },
+        textColor: C.text,
+        fontFamily: 'Pretendard, system-ui, sans-serif',
+        fontSize: 11,
+        attributionLogo: false
+      },
+      localization: {
+        locale: 'ko-KR',
+        dateFormat: 'yyyy. MM. dd.'
+      },
+      grid: {
+        vertLines: { color: C.grid },
+        horzLines: { color: C.grid }
+      },
+      rightPriceScale: {
+        borderColor: '#d1d5db',
+        scaleMargins: { top: 0.10, bottom: 0.10 },
+        minimumWidth: 92
+      },
+      timeScale: {
+        borderColor: '#d1d5db',
+        timeVisible: false,
+        secondsVisible: false,
+        rightOffset: 0,
+        barSpacing: 7,
+        minBarSpacing: MIN_BAR_SPACING,
+        fixRightEdge: false,
+        tickMarkFormatter: koTick
+      },
+      crosshair: {
+        mode: window.LightweightCharts.CrosshairMode.Normal,
+        vertLine: { color: C.cross, width: 1, style: 2 },
+        horzLine: { color: C.cross, width: 1, style: 2 }
+      },
+      handleScroll: {
+        mouseWheel: false,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false
+      },
+      handleScale: {
+        axisPressedMouseMove: false,
+        mouseWheel: false,
+        pinch: true
+      },
+      kineticScroll: {
+        mouse: true,
+        touch: true
+      }
+    };
+  }
+
+  function normalizeSeriesOrder(value) {
+    const order = value && typeof value === 'object' && !Array.isArray(value) ? structuredClone(value) : {};
+    if (Array.isArray(order[LEGACY_RATE_CATEGORY])) {
+      const legacy = order[LEGACY_RATE_CATEGORY];
+      if (!Array.isArray(order[RATE_CATEGORY])) {
+        order[RATE_CATEGORY] = legacy.filter(code => SERIES.some(item => item.code === code && item.category === RATE_CATEGORY));
+      }
+      if (!Array.isArray(order[FINANCIAL_CREDIT_CATEGORY])) {
+        order[FINANCIAL_CREDIT_CATEGORY] = legacy.filter(code => SERIES.some(item => item.code === code && item.category === FINANCIAL_CREDIT_CATEGORY));
+      }
+      delete order[LEGACY_RATE_CATEGORY];
+    }
+    if (Array.isArray(order[LEGACY_BUSINESS_CREDIT_CATEGORY])) {
+      if (!Array.isArray(order[BUSINESS_DISTRESS_CATEGORY])) {
+        order[BUSINESS_DISTRESS_CATEGORY] = order[LEGACY_BUSINESS_CREDIT_CATEGORY];
+      }
+      delete order[LEGACY_BUSINESS_CREDIT_CATEGORY];
+    }
+    return order;
+  }
+
+  function normalizeCategoryOrder(value) {
+    const stored = Array.isArray(value) ? value.filter(name => typeof name === 'string') : [];
+    const expanded = stored.flatMap(name =>
+      name === LEGACY_RATE_CATEGORY
+        ? [RATE_CATEGORY, FINANCIAL_CREDIT_CATEGORY]
+        : [name === LEGACY_BUSINESS_CREDIT_CATEGORY ? BUSINESS_DISTRESS_CATEGORY : name]
+    );
+    return [...new Set([...expanded.filter(name => DEFAULT_CATEGORY_ORDER.includes(name)), ...DEFAULT_CATEGORY_ORDER])];
+  }
+
+  function normalizePreferences(row) {
+    const order = normalizeSeriesOrder(row?.series_order);
+    const hidden = Array.isArray(row?.hidden_series) ? row.hidden_series.filter(code => typeof code === 'string') : [];
+    const horizontal = row?.horizontal_lines && typeof row.horizontal_lines === 'object' && !Array.isArray(row.horizontal_lines)
+      ? row.horizontal_lines
+      : {};
+    return {
+      series_order: order,
+      hidden_series: hidden,
+      horizontal_lines: horizontal
+    };
+  }
+
+  async function loadPreferences() {
+    const { data, error } = await supabaseClient
+      .from('economic_chart_preferences')
+      .select('series_order,hidden_series,horizontal_lines')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('economic chart preferences load failed', error);
+      preferences = structuredClone(DEFAULT_PREFERENCES);
+      return;
+    }
+    preferences = normalizePreferences(data);
+  }
+
+  async function loadCatalogSettings() {
+    const [{ data: account, error: accountError }, { data: settings, error: settingsError }] = await Promise.all([
+      supabaseClient.from('user_accounts').select('is_admin').eq('user_id', user.id).maybeSingle(),
+      supabaseClient.from('economic_chart_catalog_settings').select('category_order').eq('id', true).maybeSingle()
+    ]);
+    if (accountError) console.warn('economic chart admin role load failed', accountError);
+    isAdmin = !accountError && account?.is_admin === true;
+    if (settingsError) console.warn('economic chart category order load failed', settingsError);
+    categoryOrder = normalizeCategoryOrder(settingsError ? [] : settings?.category_order);
+  }
+
+  async function persistCategoryOrder() {
+    if (!isAdmin) return;
+    const payload = {
+      id: true,
+      category_order: [...categoryOrder],
+      updated_at: new Date().toISOString(),
+      updated_by:user.id
+    };
+    const { error } = await supabaseClient.from('economic_chart_catalog_settings').upsert(payload, { onConflict: 'id' });
+    if (error) throw error;
+  }
+
+  function persistPreferences() {
+    if (!user) return Promise.resolve();
+    const payload = {
+      user_id: user.id,
+      series_order: structuredClone(preferences.series_order),
+      hidden_series: [...(preferences.hidden_series || [])],
+      horizontal_lines: structuredClone(preferences.horizontal_lines || {}),
+      updated_at: new Date().toISOString()
+    };
+    preferenceSaveChain = preferenceSaveChain.catch(() => {}).then(async () => {
+      const { error } = await supabaseClient.from('economic_chart_preferences').upsert(payload, { onConflict: 'user_id' });
+      if (error) throw error;
+    });
+    return preferenceSaveChain;
+  }
+
+  function preferenceError(error) {
+    console.error(error);
+    $('economic-note').textContent = `개인 설정 저장 오류: ${error?.message || '알 수 없는 오류'}`;
+  }
+
+  function savedOrder() {
+    return preferences.series_order || {};
+  }
+
+  function saveOrder(category, codes) {
+    preferences.series_order = { ...savedOrder(), [category]: codes };
+    persistPreferences().catch(preferenceError);
+  }
+
+  function hiddenCodes() {
+    return new Set(preferences.hidden_series || []);
+  }
+
+  function saveHidden(set) {
+    preferences.hidden_series = [...set];
+    persistPreferences().catch(preferenceError);
+  }
+
+  function savedPlainLines(code) {
+    const values = preferences.horizontal_lines?.[code];
+    return Array.isArray(values) ? values.map(Number).filter(Number.isFinite) : [];
+  }
+
+  function savePlainLinesFromChart() {
+    if (!meta) return;
+    preferences.horizontal_lines = {
+      ...(preferences.horizontal_lines || {}),
+      [meta.code]: lines.filter(l => !l.target).map(l => l.price)
+    };
+    persistPreferences().catch(preferenceError);
+  }
+
+  const visibleSeries = () => {
+    const hidden = hiddenCodes();
+    return SERIES.filter(m => !hidden.has(m.code));
+  };
+
+  function orderedGroups() {
+    const state = savedOrder();
+    const groups = new Map();
+    for (const m of visibleSeries()) {
+      if (!groups.has(m.category)) groups.set(m.category, []);
+      groups.get(m.category).push(m);
+    }
+    for (const [category, items] of groups) {
+      const rank = new Map((state[category] || []).map((code, i) => [code, i]));
+      items.sort((a, b) => (rank.get(a.code) ?? 9999) - (rank.get(b.code) ?? 9999));
+    }
+    const rank = new Map(categoryOrder.map((name, index) => [name, index]));
+    return new Map([...groups].sort(([a], [b]) => (rank.get(a) ?? 9999) - (rank.get(b) ?? 9999)));
+  }
+
+  function firstVisibleSeries() {
+    for (const items of orderedGroups().values()) {
+      if (items.length) return items[0];
+    }
+    return null;
+  }
+
+  function hideSeries(m) {
+    const hidden = hiddenCodes();
+    hidden.add(m.code);
+    saveHidden(hidden);
+    renderList();
+    if (meta?.code === m.code) {
+      const next = firstVisibleSeries();
+      if (next) {
+        selectSeries(next);
+      } else {
+        meta = null;
+        resetChart();
+        $('economic-chart-title').textContent = '—';
+        $('economic-chart-meta').textContent = '—';
+        $('economic-status').textContent = '표시할 지표 없음';
+      }
+    } else {
+      activeButton(meta?.code);
+    }
+  }
+
+  function restoreSeries() {
+    preferences.hidden_series = [];
+    persistPreferences().catch(preferenceError);
+    renderList();
+    activeButton(meta?.code);
+  }
+
+  function moveCategory(source,target) {
+    const order = [...categoryOrder];
+    const from = order.indexOf(source);
+    const to = order.indexOf(target);
+    if (from < 0 || to < 0 || from === to) return;
+    order.splice(to, 0, order.splice(from, 1)[0]);
+    categoryOrder = order;
+    persistCategoryOrder().catch(preferenceError);
+    renderList();
+    activeButton(meta?.code);
+  }
+
+  function renderList() {
+    const root = $('economic-series-list');
+    root.replaceChildren();
+
+    for (const [name, items] of orderedGroups()) {
+      const g = document.createElement('div');
+      g.className = 'economic-series-group';
+      g.dataset.category = name;
+      g.innerHTML = `<div class="economic-series-group-title">${name}<small>${isAdmin ? '제목을 드래그해 이동' : '드래그로 순서 변경'}</small></div>`;
+
+      const title = g.querySelector('.economic-series-group-title');
+      if(isAdmin){title.draggable=true;
+        title.classList.add('is-admin-draggable');
+        title.addEventListener('dragstart', e => {
+          categoryDrag = name;
+          title.classList.add('is-dragging');
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        title.addEventListener('dragend', () => {
+          categoryDrag = null;
+          title.classList.remove('is-dragging');
+          document.querySelectorAll('.economic-series-group-title.is-drop-target').forEach(node => node.classList.remove('is-drop-target'));
+        });
+        title.addEventListener('dragover', e => {
+          if (!categoryDrag || categoryDrag === name) return;
+          e.preventDefault();
+          title.classList.add('is-drop-target');
+        });
+        title.addEventListener('dragleave', () => title.classList.remove('is-drop-target'));
+        title.addEventListener('drop', e => {
+          if (!categoryDrag) return;
+          e.preventDefault();
+          moveCategory(categoryDrag, name);
+          categoryDrag = null;
+        });
+      }
+
+      for (const m of items) {
+        const row = document.createElement('div');
+        row.className = 'economic-series-row';
+        row.draggable = true;
+        row.dataset.seriesCode = m.code;
+        row.dataset.category = name;
+
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'economic-series-button';
+        b.dataset.seriesCode = m.code;
+        b.innerHTML = `<span class="economic-drag-handle" aria-hidden="true">⋮⋮</span><span>${m.title}<small>${m.frequencyLabel || freq(m.frequency)} · ${m.unit}</small></span>`;
+        b.onclick = () => selectSeries(m);
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'economic-series-remove';
+        remove.title = '목록에서 삭제';
+        remove.setAttribute('aria-label', `${m.title} 목록에서 삭제`);
+        remove.textContent = '×';
+        remove.onclick = e => {
+          e.stopPropagation();
+          hideSeries(m);
+        };
+
+        row.addEventListener('dragstart', e => {
+          dragState = { code: m.code, category: name };
+          row.classList.add('is-dragging');
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        row.addEventListener('dragend', () => {
+          dragState = null;
+          row.classList.remove('is-dragging');
+          document.querySelectorAll('.economic-series-row.is-drop-target').forEach(x => x.classList.remove('is-drop-target'));
+        });
+        row.addEventListener('dragover', e => {
+          if (!dragState || dragState.category !== name || dragState.code === m.code) return;
+          e.preventDefault();
+          row.classList.add('is-drop-target');
+        });
+        row.addEventListener('dragleave', () => row.classList.remove('is-drop-target'));
+        row.addEventListener('drop', e => {
+          if (!dragState || dragState.category !== name) return;
+          e.preventDefault();
+          row.classList.remove('is-drop-target');
+          const codes = [...g.querySelectorAll('.economic-series-row')].map(x => x.dataset.seriesCode);
+          const from = codes.indexOf(dragState.code);
+          const to = codes.indexOf(m.code);
+          if (from < 0 || to < 0 || from === to) return;
+          codes.splice(to, 0, codes.splice(from, 1)[0]);
+          saveOrder(name, codes);
+          renderList();
+          activeButton(meta?.code);
+        });
+
+        row.append(b, remove);
+        g.append(row);
+      }
+      root.append(g);
+    }
+
+    const hiddenCount = hiddenCodes().size;
+    if (hiddenCount) {
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.className = 'economic-series-restore';
+      restore.textContent = `삭제한 지표 복원 (${hiddenCount})`;
+      restore.onclick = restoreSeries;
+      root.append(restore);
+    }
+  }
+
+  function activeButton(code) {
+    document.querySelectorAll('.economic-series-button').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.seriesCode === code);
+    });
+  }
+
+  function hideCrosshairValue() {
+    const label = $('economic-crosshair-value');
+    if (label) label.hidden = true;
+  }
+
+  function showCrosshairValue(param) {
+    const label = $('economic-crosshair-value');
+    const host = $('economic-chart-host');
+    const datum = param?.seriesData?.get(raw);
+    const value = typeof datum === 'number' ? datum : Number(datum?.value);
+
+    if (!label || !host || !param?.point || !Number.isFinite(value)) {
+      hideCrosshairValue();
+      return;
+    }
+    label.textContent = window.MacroWatchFrontend.formatDisplayNumber(value, { maximumFractionDigits: displayDecimals(meta) });
+    label.hidden = false;
+    const half = label.offsetWidth / 2;
+    const x = Math.max(half + 4, Math.min(host.clientWidth - half - 4, param.point.x));
+    label.style.left = `${x}px`;
+  }
+
+  function resetChart() {
+    if (initialRangeFrame) {
+      cancelAnimationFrame(initialRangeFrame);
+      initialRangeFrame = 0;
+    }
+    if (bellPositionFrame) {
+      cancelAnimationFrame(bellPositionFrame);
+      bellPositionFrame = 0;
+    }
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+      resizeObserver = null;
+    }
+    const host = $('economic-chart-host');
+    if (host) {
+      host.onwheel = null;
+      host.ondblclick = null;
+      host.onmouseleave = null;
+    }
+    hideCrosshairValue();
+    if (chart) {
+      chart.remove();
+      chart = null;
+    }
+    raw = compare = fast = slow = compareFast = compareSlow = null;
+    lines = [];
+    selected = null;
+    lineMode = false;
+    tickMode = 'month';
+    monthTickDates = new Set();
+    initialRangePending = false;
+    $('economic-line-tool').classList.remove('is-active');
+    $('economic-delete-line').disabled = true;
+    $('economic-alert-layer').replaceChildren();
+  }
+
+  function rightGapBars() {
+    if (!chart) return 0;
+    const spacing = Number(chart.timeScale().options?.().barSpacing) || 7;
+    return RIGHT_GAP_PX / Math.max(spacing, 0.2);
+  }
+
+  const maxRange = () => (rows.length ? { from: 0, to: rows.length - 1 + rightGapBars() } : null);
+
+  function fitMax() {
+    const r = maxRange();
+    if (r && chart) {
+      chart.timeScale().setVisibleLogicalRange(r);
+      updateTickMode(r);
+      schedulePlaceBells();
+    }
+  }
+
+  function initialRange() {
+    if (!rows.length) return null;
+    const count=Math.min(DEFAULT_VISIBLE_BARS,rows.length),last=rows.length-1;
+    return{from:last-count+1,to:last+rightGapBars()};
+  }
+
+  function showInitialRange() {
+    const r = initialRange();
+    if (r && chart) {
+      tickMode = 'month';
+      changingRange = true;
+      chart.timeScale().setVisibleLogicalRange(r);
+      const aligned = { from: r.from, to: rows.length - 1 + rightGapBars() };
+      chart.timeScale().setVisibleLogicalRange(aligned);
+      changingRange = false;
+      chart.timeScale().applyOptions({ tickMarkFormatter: koTick });
+      updateTickMode(chart.timeScale().getVisibleLogicalRange() || aligned);
+      schedulePlaceBells();
+    }
+  }
+
+  function scheduleInitialRange() {
+    if (initialRangeFrame) cancelAnimationFrame(initialRangeFrame);
+    initialRangePending = true;
+    initialRangeFrame = requestAnimationFrame(() => {
+      initialRangeFrame = requestAnimationFrame(() => {
+        initialRangeFrame = 0;
+        if (!chart || !initialRangePending) return;
+        initialRangePending = false;
+        showInitialRange();
+      });
+    });
+  }
+
+  function clampRange(r) {
+    if (!r || !chart || !rows.length || changingRange) return;
+    const last = rows.length - 1;
+    const maxTo = last + rightGapBars();
+    const maxW = maxTo / MIN_DATA_SCREEN_RATIO;
+    const w = Math.min(maxW, r.to - r.from);
+    let from = r.from;
+    let to = from + w;
+
+    if(to>maxTo) {
+      to = maxTo;
+      from = to - w;
+    }
+    if (from < -to) {
+      from = -w / 2;
+      to = w / 2;
+    }
+    if (Math.abs(from - r.from) > 0.01 || Math.abs(to - r.to) > 0.01) {
+      changingRange = true;
+      chart.timeScale().setVisibleLogicalRange({ from, to });
+      changingRange = false;
+    }
+    updateTickMode({ from, to });
+    schedulePlaceBells();
+  }
+
+  function wheel(e) {
+    if (!chart || !rows.length) return;
+    e.preventDefault();
+    const r = chart.timeScale().getVisibleLogicalRange() || initialRange();
+    const last = rows.length - 1;
+    const maxTo = last + rightGapBars();
+    const w = Math.max(MIN_VISIBLE_BARS, r.to - r.from);
+    const anchor = r.to >= last ? maxTo : Math.min(r.to, maxTo);
+    const maxW = Math.max(MIN_VISIBLE_BARS, anchor / MIN_DATA_SCREEN_RATIO);
+    const nextW = Math.min(maxW, Math.max(MIN_VISIBLE_BARS, w * (e.deltaY > 0 ? 1.16 : 0.86)));
+    const next = { from: anchor - nextW, to: anchor };
+
+    changingRange = true;
+    chart.timeScale().setVisibleLogicalRange(next);
+    changingRange = false;
+    updateTickMode(next);
+    schedulePlaceBells();
+  }
+
+  const findLine = id => lines.find(l => l.id === id);
+
+  const style = l => ({
+    price: l.price,
+    color: l.id === selected ? C.selected : C.line,
+    lineWidth: l.id === selected ? 2 : 1,
+    lineStyle: 2,
+    axisLabelVisible: false,
+    title: ''
+  });
+
+  function refreshLines() {
+    lines.forEach(l => l.obj.applyOptions(style(l)));
+    $('economic-delete-line').disabled = !selected;
+    schedulePlaceBells();
+  }
+
+  function choose(id) {
+    selected = id || null;
+    refreshLines();
+  }
+
+  function addLine(price, target = null, persist = true) {
+    if (!raw || !Number.isFinite(price)) return null;
+    const old = target ? lines.find(l => l.target?.id === target.id) : null;
+    if (old) return old;
+    const l = { id: `line-${++lineCounter}`, price, target, obj: null };
+    l.obj = raw.createPriceLine(style(l));
+    lines.push(l);
+    schedulePlaceBells();
+    if (persist && !target) savePlainLinesFromChart();
+    return l;
+  }
+
+  function restorePlainLines() {
+    if (!meta || !raw) return;
+    savedPlainLines(meta.code).forEach(price => addLine(price, null, false));
+  }
+
+  function deleteLine() {
+    const l = findLine(selected);
+    if (!l || !raw) return;
+    raw.removePriceLine(l.obj);
+    lines = lines.filter(x => x.id !== l.id);
+    selected = null;
+    savePlainLinesFromChart();
+    refreshLines();
+  }
+
+  function clearLines() {
+    if (!raw) return;
+    lines.forEach(l => raw.removePriceLine(l.obj));
+    lines = [];
+    selected = null;
+    savePlainLinesFromChart();
+    refreshLines();
+  }
+
+  function nearest(y) {
+    let best = null;
+    let d = Infinity;
+    for (const l of lines) {
+      const py = raw?.priceToCoordinate(l.price);
+      if (py == null) continue;
+      const nd = Math.abs(py - y);
+      if (nd < d) {
+        best = l;
+        d = nd;
+      }
+    }
+    return d <= 7 ? best : null;
+  }
+
+  async function loadAlerts() {
+    const { data, error } = await supabaseClient
+      .from('targets')
+      .select('id,title,condition_type,target_value,last_value,is_active,source_config')
+      .eq('user_id', user.id)
+      .eq('source_type', 'economic_chart')
+      .eq('is_active', true);
+
+    if (error) throw error;
+    alerts = (data || []).filter(t => t.source_config?.series_code);
+  }
+
+  const alertsFor = code => alerts.filter(t => t.source_config?.series_code === code);
+
+  function syncAlertLines() {
+    if (!meta || !raw) return;
+    alertsFor(meta.code).forEach(t => addLine(Number(t.target_value), t, false));
+    schedulePlaceBells();
+  }
+
+  const bellSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.35-1.67h-4.7A2.5 2.5 0 0 0 12 22Zm7-5-1.7-2.15V10a5.3 5.3 0 0 0-4.3-5.2V4a1 1 0 1 0-2 0v.8A5.3 5.3 0 0 0 6.7 10v4.85L5 17v1h14v-1Z"/></svg>';
+
+  function placeBells() {
+    const layer = $('economic-alert-layer');
+    if (!layer || !raw) return;
+    layer.replaceChildren();
+
+    for (const l of lines) {
+      const y = raw.priceToCoordinate(l.price);
+      if (y == null || y < 0 || y > $('economic-chart-host').clientHeight) continue;
+      const box = document.createElement('button');
+      box.type = 'button';
+      box.className = `economic-alert-marker-box${l.id === selected ? ' is-selected' : ''}`;
+      box.style.top = `${y}px`;
+      box.title = l.target ? '알림 수정/삭제' : '추적 알림 추가';
+      box.setAttribute('aria-label', `${fmt(l.price)} · ${box.title}`);
+      box.innerHTML = `<span class="economic-alert-marker-value">${fmt(l.price)}</span><span class="economic-alert-bell${l.target ? ' is-active' : ''}">${bellSvg}</span>`;
+      box.onclick = e => {
+        e.stopPropagation();
+        choose(l.id);
+        openModal(l);
+      };
+      layer.append(box);
+    }
+  }
+
+  function schedulePlaceBells() {
+    if (bellPositionFrame) cancelAnimationFrame(bellPositionFrame);
+    bellPositionFrame = requestAnimationFrame(() => {
+      bellPositionFrame = requestAnimationFrame(() => {
+        bellPositionFrame = 0;
+        placeBells();
+      });
+    });
+  }
+
+  function closeModal() {
+    $('economic-alert-modal').hidden = true;
+    $('economic-alert-form').dataset.lineId = '';
+  }
+
+  function openModal(l) {
+    $('economic-alert-modal').hidden = false;
+    $('economic-alert-form').dataset.lineId = l.id;
+    $('economic-alert-title').textContent = l.target ? '추적 알림 수정' : '추적 알림 추가';
+    $('economic-alert-series').textContent = meta?.title || '';
+    $('economic-alert-condition').value = l.target?.condition_type || 'cross';
+    window.MacroWatchFrontend.setDisplayNumberInput($('economic-alert-value'), l.target?.target_value ?? l.price, {
+      maximumFractionDigits: displayDecimals(meta)
+    });
+    $('economic-alert-delete').hidden = !l.target;
+  }
+
+  function showAlertError(error) {
+    $('economic-note').textContent = `알림 저장 오류: ${error?.message || '알 수 없는 오류'}`;
+  }
+
+  async function saveAlert(e) {
+    e.preventDefault();
+    const l = findLine($('economic-alert-form').dataset.lineId);
+    if (!l || !meta || !user) return;
+
+    const threshold = Number(window.MacroWatchFrontend.readDisplayNumberInput($('economic-alert-value')));
+    if (!Number.isFinite(threshold)) return;
+
+    const condition = $('economic-alert-condition').value;
+    const payload = {
+      title: `${meta.title} ${condition === 'gte' ? '상향' : condition === 'lte' ? '하향' : '상/하향'} 돌파`,
+      url: 'economic-charts.html',
+      css_selector: meta.code,
+      condition_type: condition,
+      target_value: threshold,
+      last_value: rows.at(-1)?.value ?? null,
+      last_checked_at: new Date().toISOString(),
+      last_error: null,
+      is_active: true,
+      user_id: user.id,
+      source_type: 'economic_chart',
+      source_config: {
+        series_code: meta.code,
+        frequency: meta.frequency
+      }
+    };
+
+    if (l.target) {
+      const { data, error } = await supabaseClient
+        .from('targets')
+        .update(payload)
+        .eq('id', l.target.id)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+      if (error) throw error;
+      l.target = data;
+      alerts = alerts.map(x => (x.id === data.id ? data : x));
+    } else {
+      const { data, error } = await supabaseClient.from('targets').insert(payload).select().single();
+      if (error) throw error;
+      l.target = data;
+      alerts.push(data);
+    }
+
+    l.price = threshold;
+    l.obj.applyOptions({ price: threshold });
+    savePlainLinesFromChart();
+    closeModal();
+    refreshLines();
+  }
+
+  async function deleteAlert() {
+    const l = findLine($('economic-alert-form').dataset.lineId);
+    if (!l?.target || !user) return;
+    const id = l.target.id;
+    const { error } = await supabaseClient.from('targets').delete().eq('id', id).eq('user_id', user.id);
+    if (error) throw error;
+    alerts = alerts.filter(x => x.id !== id);
+    l.target = null;
+    savePlainLinesFromChart();
+    closeModal();
+    schedulePlaceBells();
+  }
+
+  function maEnabled(m = meta) {
+    if (m?.maAvailable === false) return false;
+    return maVisibility.has(m.code) ? maVisibility.get(m.code) : !m.compareCode&&m.defaultMa!==false;
+  }
+
+  function setLegend(items) {
+    const legend = $('economic-legend');
+    legend.replaceChildren();
+    items.forEach(([label, color]) => {
+      const span = document.createElement('span');
+      span.textContent = label;
+      span.style.setProperty('--legend-color', color);
+      legend.append(span);
+    });
+  }
+
+  function applyMaVisibility() {
+    const visible = !!meta && maEnabled(meta);
+    [fast, slow, compareFast, compareSlow].forEach(series => series?.applyOptions({ visible }));
+    const button = $('economic-ma-toggle');
+    button.disabled = meta?.maAvailable === false;
+    button.textContent = meta?.maAvailable === false ? '이평선 없음' : `이평선 ${visible ? 'ON' : 'OFF'}`;
+    button.classList.toggle('is-active', visible);
+    if (!meta) return;
+
+    const [, , fl, sl] = MA_WINDOWS[meta.frequency];
+    const primaryTitle = meta.legendTitle || meta.title;
+    const items = meta.compareCode
+      ? [[primaryTitle, C.raw], [meta.compareTitle, C.compare]]
+      : [[primaryTitle, C.raw]];
+
+    if (visible) {
+      items.push([`${primaryTitle} ${fl}`, C.fast], [`${primaryTitle} ${sl}`, C.slow]);
+      if (meta.compareCode) {
+        items.push([`${meta.compareTitle} ${fl}`, C.compareFast], [`${meta.compareTitle} ${sl}`, C.compareSlow]);
+      }
+    }
+    setLegend(items);
+  }
+
+  function renderChart(m, data) {
+    resetChart();
+    rows = data;
+    rebuildMonthTickDates(data);
+
+    const host = $('economic-chart-host');
+    host.querySelector('.economic-empty')?.remove();
+    if (!data.length) {
+      host.insertAdjacentHTML('afterbegin', `<div class="economic-empty">${m.pending || '저장된 데이터가 없습니다.'}</div>`);
+      $('economic-note').textContent = m.pending || '';
+      return;
+    }
+
+    chart = window.LightweightCharts.createChart(host, {
+      ...options(),
+      width: Math.max(1, host.clientWidth),
+      height: Math.max(1, host.clientHeight)
+    });
+
+    const minMove = 1 / (10 ** m.decimals);
+    const displayMinMove = 1 / (10 ** displayDecimals(m));
+    const pf = {
+      type: 'custom',
+      minMove: displayMinMove,
+      formatter: value => window.MacroWatchFrontend.formatDisplayNumber(value, { maximumFractionDigits: displayDecimals(m) })
+    };
+    const lineType = m.lineType === 'steps'
+      ? window.LightweightCharts.LineType.WithSteps
+      : window.LightweightCharts.LineType.Simple;
+
+    const primaryData = data.filter(row => Number.isFinite(row.value)).map(({ time, value }) => ({ time, value }));
+    raw = chart.addLineSeries({
+      color: C.raw,
+      lineWidth: 2,
+      priceFormat: pf,
+      lineType,
+      lastValueVisible: true,
+      priceLineVisible: true
+    });
+    raw.setData(primaryData);
+
+    const [fw, sw] = MA_WINDOWS[m.frequency];
+    fast = chart.addLineSeries({
+      color: C.fast,
+      lineWidth: 1,
+      priceFormat: pf,
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    slow = chart.addLineSeries({
+      color: C.slow,
+      lineWidth: 1,
+      priceFormat: pf,
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    fast.setData(ma(data, fw));
+    slow.setData(ma(data, sw));
+
+    if (m.compareCode) {
+      const secondaryData = data
+        .filter(row => Number.isFinite(row.compareValue))
+        .map(row => ({ time: row.time, value: row.compareValue }));
+      compare = chart.addLineSeries({
+        color: C.compare,
+        lineWidth: 2,
+        priceFormat: pf,
+        lineType,
+        lastValueVisible: true,
+        priceLineVisible: true
+      });
+      compare.setData(secondaryData);
+
+      compareFast = chart.addLineSeries({
+        color: C.compareFast,
+        lineWidth: 1,
+        priceFormat: pf,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+      compareSlow = chart.addLineSeries({
+        color: C.compareSlow,
+        lineWidth: 1,
+        priceFormat: pf,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+      compareFast.setData(ma(data, fw, 'compareValue'));
+      compareSlow.setData(ma(data, sw, 'compareValue'));
+    }
+
+    applyMaVisibility();
+
+    const latest = primaryData.at(-1);
+    $('economic-note').textContent = `최신 ${latest.time} · ${fmt(latest.value, m)} · 기본 최근 ${Math.min(DEFAULT_VISIBLE_BARS, data.length)}개 · 휠 확대/축소 · 드래그 이동 · 더블클릭 기본복귀`;
+
+    restorePlainLines();
+    syncAlertLines();
+
+    chart.subscribeClick(p => {
+      if (!p.point) return;
+      if (lineMode) {
+        const price = raw.coordinateToPrice(p.point.y);
+        if (Number.isFinite(price)) {
+          const l = addLine(Math.round(price / minMove) * minMove);
+          choose(l?.id);
+        }
+        lineMode = false;
+        $('economic-line-tool').classList.remove('is-active');
+        return;
+      }
+      choose(nearest(p.point.y)?.id);
+    });
+
+    chart.subscribeCrosshairMove(showCrosshairValue);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(clampRange);
+    host.onwheel = wheel;
+    host.ondblclick = e => {
+      e.preventDefault();
+      showInitialRange();
+    };
+    host.onmouseleave = hideCrosshairValue;
+
+    resizeObserver = new ResizeObserver(() => {
+      if (chart) {
+        chart.applyOptions({
+          width: Math.max(1, host.clientWidth),
+          height: Math.max(1, host.clientHeight)
+        });
+        schedulePlaceBells();
+      }
+    });
+    resizeObserver.observe(host);
+    scheduleInitialRange();
+  }
+
+  async function selectSeries(m) {
+    meta = m;
+    activeButton(m.code);
+    $('economic-chart-title').textContent = m.title;
+    $('economic-chart-meta').textContent = `${m.frequencyLabel || freq(m.frequency)} · ${m.unit}`;
+    $('economic-status').textContent = '불러오는 중';
+
+    try {
+      const data = await fetchSeries(m);
+      renderChart(m, data);
+      $('economic-status').textContent = data.length ? `${data.length.toLocaleString('ko-KR')}개 관측값` : '저장 데이터 없음';
+    } catch (error) {
+      resetChart();
+      $('economic-chart-host').insertAdjacentHTML('afterbegin', '<div class="economic-empty">데이터를 불러오지 못했습니다.</div>');
+      $('economic-note').textContent = error?.message || '조회 오류';
+      $('economic-status').textContent = '조회 오류';
+    }
+  }
+
+  async function initialize() {
+    if (!supabaseClient || !window.LightweightCharts) return;
+    const { data } = await supabaseClient.auth.getSession();
+    if (!data.session) {
+      location.replace('index.html');
+      return;
+    }
+    user = data.session.user;
+
+    await Promise.all([loadPreferences(), loadCatalogSettings()]);
+    renderList();
+    await loadAlerts();
+
+    $('economic-ma-toggle').onclick = () => {
+      if (!meta) return;
+      maVisibility.set(meta.code, !maEnabled(meta));
+      applyMaVisibility();
+    };
+    $('economic-line-tool').onclick = () => {
+      lineMode = !lineMode;
+      $('economic-line-tool').classList.toggle('is-active', lineMode);
+    };
+    $('economic-delete-line').onclick = deleteLine;
+    $('economic-clear-lines').onclick = clearLines;
+    $('economic-fit-max').onclick = fitMax;
+
+    document.querySelectorAll('[data-close-alert]').forEach(n => (n.onclick = closeModal));
+    $('economic-alert-form').onsubmit = e => saveAlert(e).catch(showAlertError);
+    $('economic-alert-delete').onclick = () => deleteAlert().catch(showAlertError);
+
+    const initial = firstVisibleSeries();
+    if (initial) await selectSeries(initial);
+  }
+
+  document.addEventListener('DOMContentLoaded', initialize);
 })();

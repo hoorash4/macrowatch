@@ -1,31 +1,49 @@
 (() => {
   'use strict';
+
   const utils = window.MacroWatchAnalysisChart;
   const { lineWidths } = utils;
   const card = document.querySelector('#equity-bond-attractiveness-dashboard');
-  if (!card || !utils) return;
+  if (!card || !utils) {
+    return;
+  }
+
   const host = card.querySelector('[data-equity-bond-chart]');
   const legend = card.querySelector('[data-equity-bond-legend]');
+
   const PROFILE = utils.chartProfile({
     cursorSeries: Object.freeze([
       { key: 'kr_score', label: '한국' },
       { key: 'us_score', label: '미국' },
     ]),
   });
-  const state = { rows: [], years: PROFILE.defaultYears };
+
+  const state = {
+    rows: [],
+    years: PROFILE.defaultYears,
+  };
+
   const { mainHeight: HEIGHT, baseWidth: BASE_WIDTH, axisWidth: AXIS } = utils.chartLayout;
   const { left: LEFT, right: RIGHT, top: TOP, bottom: BOTTOM } = utils.plotPadding();
   const COLORS = { KR: '#2563a8', US: '#b7791f' };
   const LABELS = { KR: '한국(KOSPI 100)', US: '미국(S&P 100)' };
-  const scale = (value, min, max, from, to) => max === min ? (from + to) / 2 : from + (value - min) / (max - min) * (to - from);
+
+  const scale = (value, min, max, from, to) => {
+    if (max === min) {
+      return (from + to) / 2;
+    }
+    return from + ((value - min) / (max - min)) * (to - from);
+  };
 
   function timelineGuides(dates, first, last, width) {
     let previousKey = '';
-    return dates.map(value => {
+    return dates.map((value) => {
       const observed = new Date(`${value}T00:00:00Z`);
       const year = observed.getUTCFullYear();
       const key = String(year);
-      if (key === previousKey) return '';
+      if (key === previousKey) {
+        return '';
+      }
       previousKey = key;
       const x = scale(Date.parse(value), first, last, LEFT, width - RIGHT);
       return `<line x1="${x}" x2="${x}" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-year-guide"/><text x="${x}" y="${HEIGHT - 10}" text-anchor="middle" class="policy-expectation-year">${year}</text>`;
@@ -33,56 +51,148 @@
   }
 
   function render() {
-    if (!state.rows.length) { host.textContent = '아직 저장된 상대매력 자료가 없습니다.'; return; }
+    if (!state.rows.length) {
+      host.textContent = '아직 저장된 상대매력 자료가 없습니다.';
+      return;
+    }
+
     const plotted = utils.rowsForRecentHistory(state.rows, 'observation_date', state.years);
-    const dates = [...new Set(plotted.map(row => row.observation_date))].sort();
-    const first = Date.parse(dates[0]), last = Date.parse(dates.at(-1));
+    const dates = [...new Set(plotted.map((row) => row.observation_date))].sort();
+    const first = Date.parse(dates[0]);
+    const last = Date.parse(dates.at(-1));
     const viewport = Math.max(680, (host.clientWidth || BASE_WIDTH) - AXIS);
     const width = utils.timelineWidth(viewport, first, last, state.years);
     const domain = { min: 0, max: 100 };
-    const byCountry = Object.fromEntries(['KR', 'US'].map(country => [country, plotted.filter(row => row.country === country).map(row => ({
-      ...row,
-      x: scale(Date.parse(row.observation_date), first, last, LEFT, width - RIGHT),
-      y: scale(Number(row.score), domain.min, domain.max, HEIGHT - BOTTOM, TOP),
-    }))]));
+
+    const byCountry = Object.fromEntries(['KR', 'US'].map((country) => [
+      country,
+      plotted
+        .filter((row) => row.country === country)
+        .map((row) => ({
+          ...row,
+          x: scale(Date.parse(row.observation_date), first, last, LEFT, width - RIGHT),
+          y: scale(Number(row.score), domain.min, domain.max, HEIGHT - BOTTOM, TOP),
+        })),
+    ]));
+
     const ticks = [0, 25, 50, 75, 100];
-    const axis = ticks.map(value => `<text x="${AXIS - 8}" y="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP) + 3}" text-anchor="end" fill="#64748b" font-size="11">${value}</text>`).join('');
-    const grid = ticks.map(value => `<line x1="${LEFT}" x2="${width - RIGHT}" y1="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" y2="${scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP)}" stroke="${value === 50 ? '#94a3b8' : '#e2e8f0'}" ${value === 50 ? 'stroke-dasharray="5 4"' : ''}/>`).join('');
-    const paths = ['KR', 'US'].map(country => `<path d="${utils.monotonePath(byCountry[country])}" fill="none" stroke="${COLORS[country]}" stroke-width="${lineWidths.primary}"/>`).join('');
+    const axis = ticks.map((value) => {
+      const yPos = scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP) + 3;
+      return `<text x="${AXIS - 8}" y="${yPos}" text-anchor="end" fill="#64748b" font-size="11">${value}</text>`;
+    }).join('');
+
+    const grid = ticks.map((value) => {
+      const yPos = scale(value, domain.min, domain.max, HEIGHT - BOTTOM, TOP);
+      const stroke = value === 50 ? '#94a3b8' : '#e2e8f0';
+      const dash = value === 50 ? 'stroke-dasharray="5 4"' : '';
+      return `<line x1="${LEFT}" x2="${width - RIGHT}" y1="${yPos}" y2="${yPos}" stroke="${stroke}" ${dash}/>`;
+    }).join('');
+
+    const paths = ['KR', 'US'].map((country) => {
+      return `<path d="${utils.monotonePath(byCountry[country])}" fill="none" stroke="${COLORS[country]}" stroke-width="${lineWidths.primary}"/>`;
+    }).join('');
+
     const guides = timelineGuides(dates, first, last, width);
-    const { frame, svg } = utils.mountChartFrame({ container: host, profile: PROFILE, height: HEIGHT, axisViewWidth: AXIS, leftAxisMarkup: axis, ariaLabel: `한미 주식투자 매력 흐름`, plotMarkup: `<svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식투자 매력 흐름">${guides}${grid}${paths}<line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/><text data-value text-anchor="middle" y="16" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text><text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-date" visibility="hidden"></text></svg>` });
+
+    const { frame, svg } = utils.mountChartFrame({
+      container: host,
+      profile: PROFILE,
+      height: HEIGHT,
+      axisViewWidth: AXIS,
+      leftAxisMarkup: axis,
+      ariaLabel: '한미 주식투자 매력 흐름',
+      plotMarkup: `
+        <svg class="policy-expectation-chart-svg" style="width:${width}px;background:#fff" viewBox="0 0 ${width} ${HEIGHT}" role="img" aria-label="한국과 미국 각각의 주식투자 매력 흐름">
+          ${guides}
+          ${grid}
+          ${paths}
+          <line data-cursor x1="0" x2="0" y1="${TOP}" y2="${HEIGHT - BOTTOM}" class="policy-expectation-cursor"/>
+          <text data-value text-anchor="middle" y="16" class="analysis-chart-cursor-text analysis-chart-cursor-value" visibility="hidden"></text>
+          <text data-date text-anchor="middle" y="${HEIGHT - BOTTOM + 12}" class="analysis-chart-cursor-text analysis-chart-cursor-date" visibility="hidden"></text>
+        </svg>
+      `.trim(),
+    });
+
     utils.setChartLegend(legend, [
       { label: LABELS.KR, style: { stroke: COLORS.KR, width: lineWidths.primary } },
       { label: LABELS.US, style: { stroke: COLORS.US, width: lineWidths.primary } },
     ], '한미 주식투자 매력 흐름 범례');
-    const cursor = host.querySelector('[data-cursor]'), value = host.querySelector('[data-value]'), dateLabel = host.querySelector('[data-date]');
+
+    const cursor = host.querySelector('[data-cursor]');
+    const value = host.querySelector('[data-value]');
+    const dateLabel = host.querySelector('[data-date]');
+
     utils.scrollToLatest(frame);
-    frame.addEventListener('pointermove', event => {
+
+    frame.addEventListener('pointermove', (event) => {
       const bounds = svg.getBoundingClientRect();
-      const pointerX = (event.clientX - bounds.left) / bounds.width * width;
-      const nearestDate = dates.reduce((best, current) => Math.abs(scale(Date.parse(current), first, last, LEFT, width - RIGHT) - pointerX) < Math.abs(scale(Date.parse(best), first, last, LEFT, width - RIGHT) - pointerX) ? current : best);
+      const pointerX = ((event.clientX - bounds.left) / bounds.width) * width;
+      const nearestDate = dates.reduce((best, current) => {
+        const bestDist = Math.abs(scale(Date.parse(best), first, last, LEFT, width - RIGHT) - pointerX);
+        const currentDist = Math.abs(scale(Date.parse(current), first, last, LEFT, width - RIGHT) - pointerX);
+        return currentDist < bestDist ? current : best;
+      });
       const x = scale(Date.parse(nearestDate), first, last, LEFT, width - RIGHT);
-      const rows = ['KR', 'US'].map(country => state.rows.find(row => row.country === country && row.observation_date === nearestDate)).filter(Boolean);
-      cursor.setAttribute('x1', x); cursor.setAttribute('x2', x); cursor.classList.add('is-visible');
-      value.textContent = rows.map(row => `${LABELS[row.country]} ${utils.formatChartNumber(row.score, { maximumFractionDigits: 1 })}`).join(' · '); value.setAttribute('visibility', 'visible');
-      dateLabel.textContent = nearestDate; dateLabel.setAttribute('visibility', 'visible');
-      utils.positionCursorText(value, x, frame); utils.positionCursorText(dateLabel, x, frame);
+      const rows = ['KR', 'US']
+        .map((country) => state.rows.find((row) => row.country === country && row.observation_date === nearestDate))
+        .filter(Boolean);
+
+      cursor.setAttribute('x1', x);
+      cursor.setAttribute('x2', x);
+      cursor.classList.add('is-visible');
+
+      value.textContent = rows
+        .map((row) => `${LABELS[row.country]} ${utils.formatChartNumber(row.score, { maximumFractionDigits: 1 })}`)
+        .join(' · ');
+      value.setAttribute('visibility', 'visible');
+
+      dateLabel.textContent = nearestDate;
+      dateLabel.setAttribute('visibility', 'visible');
+
+      utils.positionCursorText(value, x, frame);
+      utils.positionCursorText(dateLabel, x, frame);
     });
-    frame.addEventListener('pointerleave', () => { cursor.classList.remove('is-visible'); value.setAttribute('visibility', 'hidden'); dateLabel.setAttribute('visibility', 'hidden'); });
+
+    frame.addEventListener('pointerleave', () => {
+      cursor.classList.remove('is-visible');
+      value.setAttribute('visibility', 'hidden');
+      dateLabel.setAttribute('visibility', 'hidden');
+    });
   }
 
   async function load({ supabaseClient }) {
-    if (!supabaseClient) return;
-    const { data, error } = await utils.loadAllRows((from, to) => supabaseClient.from('equity_bond_attractiveness_weekly').select('country,observation_date,score').eq('method_version', 'stock-attractiveness-v3').order('observation_date').order('country').range(from, to));
-    if (error) { host.textContent = '상대매력 자료를 불러오지 못했습니다.'; return; }
-    state.rows = (data || []).filter(row => Number.isFinite(Number(row.score)));
+    if (!supabaseClient) {
+      return;
+    }
+    const { data, error } = await utils.loadAllRows((from, to) => supabaseClient
+      .from('equity_bond_attractiveness_weekly')
+      .select('country,observation_date,score')
+      .eq('method_version', 'stock-attractiveness-v3')
+      .order('observation_date')
+      .order('country')
+      .range(from, to));
+
+    if (error) {
+      host.textContent = '상대매력 자료를 불러오지 못했습니다.';
+      return;
+    }
+    state.rows = (data || []).filter((row) => Number.isFinite(Number(row.score)));
     render();
   }
-  card.querySelector('[data-equity-bond-ranges]').addEventListener('click', event => {
-    const button = event.target.closest('[data-years]'); if (!button) return;
+
+  card.querySelector('[data-equity-bond-ranges]').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-years]');
+    if (!button) {
+      return;
+    }
     state.years = button.dataset.years;
-    card.querySelectorAll('[data-years]').forEach(item => { item.classList.toggle('is-active', item === button); item.setAttribute('aria-pressed', String(item === button)); });
+    card.querySelectorAll('[data-years]').forEach((item) => {
+      const active = item === button;
+      item.classList.toggle('is-active', active);
+      item.setAttribute('aria-pressed', String(active));
+    });
     render();
   });
+
   window.MacroWatchDashboard?.registerLoader(load);
 })();
