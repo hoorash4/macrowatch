@@ -898,7 +898,8 @@
         relationship: isDeleted ? null : $('historical-manual-pivot-relationship').value || null,
         reason: isDeleted ? null : $('historical-manual-pivot-reason').value || null,
         comment: isDeleted ? null : $('historical-manual-pivot-comment').value || null,
-        key_reference: sendKeyReference
+        key_reference: sendKeyReference,
+        is_verified: isVerified
       });
 
       indicatorRepository.clearManualPivots(context.caseCode, context.indexCode, context.seriesCode);

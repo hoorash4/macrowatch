@@ -256,6 +256,7 @@ export default {
         const comment = isDeleted ? null : String(body?.comment || "").trim();
         const keyReference = isDeleted || body?.key_reference == null || body.key_reference === ""
           ? null : String(body.key_reference);
+        const isVerified = isDeleted ? null : body?.is_verified === true ? true : body?.is_verified === false ? false : null;
         if (!isDeleted && (!pivotDate || !Number.isFinite(pivotValue)
           || (relationship !== null && !["positive", "inverse", "unclear"].includes(relationship))
           || (reason?.length || 0) > 250 || (comment?.length || 0) > 1000
@@ -267,6 +268,7 @@ export default {
           p_source_date: sourceDate, p_pivot_date: pivotDate, p_pivot_value: pivotValue,
           p_relationship: relationship, p_reason: reason, p_comment: comment,
           p_key_reference: keyReference, p_is_deleted: isDeleted, p_user_id: user.id,
+          p_is_verified: isVerified,
         });
         if (error) throw error;
         return json({ saved: true }, 200, origin);

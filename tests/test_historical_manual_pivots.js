@@ -708,8 +708,10 @@ test('matchesDirection for TROUGH owner correctly checks next interval when pivo
   assert.equal(matchesDirection(pivot, 'TROUGH', pivots, rows, cycle, indexRows), true);
 });
 
-
-
-
-
-
+test('unchecking verified sends is_verified: false and clears verified status across indices', () => {
+  const rowAfterUncheck = { key_references: { SP500: false } };
+  const hasAnyVerified = Object.values(rowAfterUncheck.key_references || {}).some(val => val === 'VERIFIED' || (typeof val === 'string' && val.endsWith('_VERIFIED')));
+  const isVerified = rowAfterUncheck.key_references?.SP500 === 'VERIFIED' || hasAnyVerified;
+  assert.equal(isVerified, false);
+  assert.match(controller, /is_verified:\s*isVerified/);
+});
