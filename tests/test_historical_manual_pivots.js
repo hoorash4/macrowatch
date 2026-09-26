@@ -689,6 +689,17 @@ test('a manual pivot with UNCLEAR reference renders reference_only or verified w
   assert.equal(verifiedTarget.selectedReferences.length,0);
 });
 
+test('unchecking key on a key-verified pivot results in VERIFIED reference and renders verified (dark gray)',()=>{
+  const cycle={startDate:'1992-08-21',peakDate:'1994-11-08',troughDate:'1998-06-16'};
+  const verifiedOnlyPivot={sourceDate:'1993-10-15',pivotDate:'1993-10-15',pivotValue:5.19,
+    reason:'확인 변곡점',comment:'',keyReference:null,isVerified:true,designatedReference:null,isDeleted:false};
+  const result=merge({storedPivots:[],manualPivots:[verifiedOnlyPivot]},cycle);
+  const target=result.find(p=>p.pivotDate==='1993-10-15');
+  assert.equal(target.markerStatus,'verified');
+  assert.equal(target.selectedReferences.length,0);
+});
+
+
 
 
 

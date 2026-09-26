@@ -864,7 +864,7 @@
     } else if (selectedRef === 'UNCLEAR') {
       sendKeyReference = isVerified ? 'UNCLEAR_VERIFIED' : 'UNCLEAR';
     } else if (context.keyTouched) {
-      sendKeyReference=isKey&&isVerified&&selectedRef?`${selectedRef}_VERIFIED`:isKey?selectedRef:isVerified?(selectedRef?`${selectedRef}_VERIFIED`:'VERIFIED'):selectedRef?`${selectedRef}_REF`:null;
+      sendKeyReference=isKey&&isVerified&&selectedRef?`${selectedRef}_VERIFIED`:isKey?selectedRef:isVerified?'VERIFIED':selectedRef?`${selectedRef}_REF`:null;
     } else if (context.keyDecision === 'manual_off') {
       sendKeyReference = null;
     } else if (context.isKey && context.isVerified && context.designatedReference) {
@@ -872,7 +872,7 @@
     } else if (context.keyDecision === 'manual_on' || (context.isKey && context.designatedReference)) {
       sendKeyReference = context.designatedReference;
     } else if (context.keyDecision === 'manual_verified' || context.isVerified) {
-      sendKeyReference = context.designatedReference ? `${context.designatedReference}_VERIFIED` : 'VERIFIED';
+      sendKeyReference = 'VERIFIED';
     } else if (context.keyDecision === 'manual_ref' || (!context.isKey && context.designatedReference)) {
       sendKeyReference = `${context.designatedReference}_REF`;
     } else {
@@ -1716,6 +1716,9 @@
   $('historical-manual-pivot-is-key').addEventListener('change', () => {
     if (manualPivotContext) manualPivotContext.keyTouched = true;
     if ($('historical-manual-pivot-is-key').checked && $('historical-manual-pivot-reference').value === 'UNCLEAR') {
+      $('historical-manual-pivot-reference').value = '';
+    }
+    if (!$('historical-manual-pivot-is-key').checked && $('historical-manual-pivot-reference').value !== 'UNCLEAR') {
       $('historical-manual-pivot-reference').value = '';
     }
   });
