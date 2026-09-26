@@ -134,14 +134,14 @@ test('administrator save updates only the selected market cycle and refreshes ca
   const a=api(); let payload=null;
   const reads=[[caseRow()],[marketRow()]];
   const client={from(table){let updating=false;const q={select(){return q;},order(){return q;},range(){return q;},eq(k,v){(q.filters ||= []).push([k,v]);return q;},
-    update(value){updating=true;payload=value;return q;},single:async()=>({data:marketRow({start_date:payload.start_date,peak_date:payload.peak_date,trough_date:payload.trough_date,cycle_status:payload.cycle_status}),error:null}),
+    update(value){updating=true;payload=value;return q;},single:async()=>({data:marketRow({start_date:payload.start_date,peak_date:payload.peak_date,trough_date:payload.trough_date,cycle_status:!payload.start_date?'draft':(payload.peak_date&&payload.trough_date?'confirmed':'in_progress')}),error:null}),
     then(resolve,reject){if(updating)return Promise.resolve({data:null,error:null}).then(resolve,reject);return Promise.resolve({data:reads.shift()||[]}).then(resolve,reject);}};q.table=table;return q;}};
   const repo=a.cycles.createRepository(client); await repo.load();
   const saved=await repo.save('dotcom','NASDAQ_COMPOSITE',{startDate:'1994-06-24',peakDate:'',troughDate:''},'user-1');
-  assert.equal(payload.cycle_status,'in_progress'); assert.equal(payload.peak_date,null); assert.equal(payload.updated_by,'user-1');
+  assert.equal(payload.peak_date,null); assert.equal(payload.updated_by,'user-1');
   assert.equal(saved.status,'in_progress'); assert.equal((await repo.load())[0].markets.NASDAQ_COMPOSITE.peakDate,null);
   const confirmed=await repo.save('dotcom','NASDAQ_COMPOSITE',{startDate:'1994-06-24',peakDate:'2000-03-10',troughDate:'2002-10-09'},'user-1');
-  assert.equal(payload.cycle_status,'confirmed'); assert.equal(confirmed.status,'confirmed');
+  assert.equal(confirmed.status,'confirmed');
 });
 test('fact view resolves canonical values without look-ahead and protects anonymous access', () => {
   const sql=read('supabase/migrations/20260915140000_add_historical_anchor_facts.sql');

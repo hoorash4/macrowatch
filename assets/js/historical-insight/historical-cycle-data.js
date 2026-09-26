@@ -89,9 +89,11 @@
       },
       async save(code, indexCode, values, userId) {
         const payload = {
-          start_date: values.startDate || null, peak_date: values.peakDate || null, trough_date: values.troughDate || null,
-          cycle_status: values.troughDate ? 'confirmed' : values.startDate ? 'in_progress' : 'draft',
-          updated_at: new Date().toISOString(), updated_by: userId,
+          start_date: values.startDate || null,
+          peak_date: values.peakDate || null,
+          trough_date: values.troughDate || null,
+          updated_at: new Date().toISOString(),
+          updated_by: userId,
         };
         const { data, error } = await client.from('historical_case_market_cycles').update(payload)
           .eq('case_code', code).eq('index_code', indexCode).select(marketFields).single();
