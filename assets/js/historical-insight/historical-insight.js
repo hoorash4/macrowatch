@@ -865,7 +865,17 @@
     } else if (selectedRef === 'UNCLEAR') {
       sendKeyReference = isVerified ? 'UNCLEAR_VERIFIED' : 'UNCLEAR';
     } else if (context.keyTouched) {
-      sendKeyReference=isKey&&isVerified&&selectedRef?`${selectedRef}_VERIFIED`:isKey?selectedRef:isVerified?'VERIFIED':selectedRef?`${selectedRef}_REF`:null;
+      if (isKey && isVerified && selectedRef) {
+        sendKeyReference = `${selectedRef}_VERIFIED`;
+      } else if (isKey) {
+        sendKeyReference = selectedRef || null;
+      } else if (isVerified) {
+        sendKeyReference = 'VERIFIED';
+      } else if (selectedRef) {
+        sendKeyReference = `${selectedRef}_REF`;
+      } else {
+        sendKeyReference = null;
+      }
     } else if (context.keyDecision === 'manual_off') {
       sendKeyReference = null;
     } else if (context.isKey && context.isVerified && context.designatedReference) {
