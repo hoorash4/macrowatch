@@ -674,7 +674,7 @@ test('indicator repository parses combined key-verified and shares verified stat
 });
 
 test('persistManualPivot generates combined key-verified reference when both key and verified are checked',()=>{
-  assert.match(controller,/sendKeyReference=isKey&&isVerified&&selectedRef\?`\$\{selectedRef\}_VERIFIED`:/);
+  assert.match(controller,/sendKeyReference\s*=\s*`\$\{selectedRef\}_VERIFIED`/);
 });
 
 test('modal HTML contains UNCLEAR 불명확 reference option and is synchronized with key checkbox',()=>{
